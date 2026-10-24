@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import LogoIntro from './components/LogoIntro';
 import Navbar from './components/Navbar';
+import WhatsAppWidget from './components/WhatsAppWidget';
 import type { NavSection } from './components/Navbar';
 import HomePage from './components/home/HomePage';
 import AboutPage from './components/about/AboutPage';
@@ -11,6 +12,7 @@ import ContactPage from './components/contact/ContactPage';
 import QuotePage from './components/quote/QuotePage';
 import LegalPage from './components/legal/LegalPage';
 import { PRIVACY_POLICY, TERMS_AND_CONDITIONS } from './components/legal/legalData';
+import { applyPageMeta } from './lib/seo';
 import { SECTION_ANCHORS } from './components/home/homeData';
 
 const SESSION_KEY = 'enkay_intro_shown';
@@ -71,6 +73,9 @@ export default function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+
+  // Per-page title, description and canonical URL for search engines
+  useEffect(() => { applyPageMeta(route); }, [route]);
 
   // ── Intro → Navbar handoff ─────────────────────────────────────────────
   const handleIntroComplete = () => {
@@ -197,6 +202,9 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* ── Floating WhatsApp chat — appears with the navbar ── */}
+      <WhatsAppWidget visible={navVisible} />
     </>
   );
 }
