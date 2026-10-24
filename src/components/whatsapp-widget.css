@@ -1,0 +1,51 @@
+/* Floating WhatsApp button — sits below modals (9500) and above page content */
+.wa-fab {
+  position: fixed; z-index: 9400;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 12px; text-decoration: none;
+  opacity: 0; transform: translateY(16px) scale(.9); pointer-events: none;
+  transition: opacity .4s ease, transform .4s cubic-bezier(.34, 1.56, .64, 1);
+}
+.wa-fab.is-visible { opacity: 1; transform: none; pointer-events: auto; }
+
+.wa-fab-btn {
+  position: relative; width: 60px; height: 60px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; color: #fff; background: #25d366;
+  box-shadow: 0 10px 24px -8px rgba(18, 140, 70, .7), 0 2px 6px rgba(0, 0, 0, .15);
+  transition: transform .25s, background-color .25s;
+}
+/* soft pulse ring to draw the eye */
+.wa-fab-btn::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; background: #25d366; z-index: -1;
+  animation: wa-pulse 2.6s ease-out infinite;
+}
+.wa-fab:hover .wa-fab-btn { transform: scale(1.08); background: #1ebe5b; }
+.wa-fab:focus-visible { outline: none; }
+.wa-fab:focus-visible .wa-fab-btn { outline: 3px solid rgba(37, 211, 102, .5); outline-offset: 3px; }
+
+.wa-fab-label {
+  padding: 10px 16px; border-radius: 14px; white-space: nowrap;
+  background: #fff; color: #3a4a3f; font: 500 14px 'Inter', 'Manrope', sans-serif;
+  box-shadow: 0 8px 24px -10px rgba(13, 56, 33, .45), 0 1px 3px rgba(0, 0, 0, .08);
+  opacity: 0; transform: translateX(10px); pointer-events: none; transition: opacity .25s, transform .25s;
+}
+.wa-fab-label b { color: #0d3721; font-weight: 700; }
+.wa-fab:hover .wa-fab-label, .wa-fab:focus-visible .wa-fab-label { opacity: 1; transform: none; }
+
+@keyframes wa-pulse {
+  0% { transform: scale(1); opacity: .55; }
+  70%, 100% { transform: scale(1.6); opacity: 0; }
+}
+
+@media (max-width: 720px) {
+  .wa-fab { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
+  .wa-fab-btn { width: 54px; height: 54px; }
+  .wa-fab-btn svg { width: 27px; height: 27px; }
+  .wa-fab-label { display: none; } /* no hover on touch; the icon speaks for itself */
+}
+@media (prefers-reduced-motion: reduce) {
+  .wa-fab, .wa-fab-btn, .wa-fab-label { transition: none; }
+  .wa-fab-btn::before { animation: none; display: none; }
+}
+@media print { .wa-fab { display: none; } }
