@@ -1,12 +1,12 @@
-import { useCallback } from 'react';
+﻿import { useCallback } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { ArrowRight, BadgeCheck, Info, ListChecks, Medal, PlugZap, ShieldCheck, Sun } from 'lucide-react';
+import { ArrowRight, BadgeCheck, ShieldCheck, Sun } from 'lucide-react';
 import type { NavSection } from '../Navbar';
 import SiteFooter from '../home/SiteFooter';
 import Reveal from '../Reveal';
 import QuoteModal from '../home/QuoteModal';
 import {
-  BOM, CATEGORIES, CERT_SPEC, MODULE_SPEC, OTHER_OPTIONS, PRODUCTS_CTA_BG, PRODUCTS_HERO_IMAGE,
+  CATEGORIES, PRODUCTS_CTA_BG, PRODUCTS_HERO_IMAGE,
 } from './productsData';
 import '../home/home.css';
 import './products.css';
@@ -107,54 +107,6 @@ export default function ProductsPage({ onNavigate, quoteOpen, onQuoteOpen, onQuo
           </div>
         </div>
       </section> */}
-
-      {/* ── Bill of materials ── */}
-      <section className="pb-bom" aria-labelledby="pb-bom-title">
-        <div className="hp-wrap">
-          <Reveal className="pb-bom-head" from="down">
-            <div>
-              <div id="pb-bom-title" className="hp-eyebrow">Bill of Materials</div>
-            </div>
-            <span className="pb-count"><ListChecks size={20} />{BOM.length} line items</span>
-          </Reveal>
-
-          <Reveal className="pb-table-wrap">
-            <table className="pb-table">
-              <thead>
-                <tr>
-                  <th>No.</th><th>Item</th><th>Brand</th>
-                </tr>
-              </thead>
-              <tbody>
-                {BOM.map((r, i) => (
-                  <Reveal as="tr" key={r.item} duration={0.5} delay={(i % 6) * 0.05} from="left">
-                    <td data-label="No."><b className="pb-no">{i + 1}</b></td>
-                    <td className="pb-item">{r.item}</td>
-                    <td data-label="Brand" className={r.brand ? 'pb-brand' : 'is-na'}>{r.brand ?? 'Not specified'}</td>
-                  </Reveal>
-                ))}
-              </tbody>
-            </table>
-            <p className="pb-note">Items marked “Not specified” were not specified in the client proposal.</p>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ── Other options ── */}
-      <section className="pb-other" aria-labelledby="pb-other-title">
-        <div className="hp-wrap pb-other-grid">
-          <Reveal from="left">
-            <div className="hp-eyebrow">Additional Options</div>
-            <h2 id="pb-other-title">Other Available Product &amp; Installation Options</h2>
-            <p>Additional products and services available on request. These options are listed separately and are not part of the 5 kWp Bill of Materials above.</p>
-            <div className="pb-info"><Info size={18} />Contact our team to confirm the options that suit your project.</div>
-          </Reveal>
-          <ul className="pb-options">
-            {OTHER_OPTIONS.map((o, i) => <Reveal as="li" key={o} from="right" delay={(i % 2) * 0.1 + Math.floor(i / 2) * 0.08}><span />{o}</Reveal>)}
-          </ul>
-        </div>
-      </section>
-
       {/* ── CTA ── */}
       <section className="pb-cta-sec" aria-labelledby="pb-cta-title">
         <div className="hp-wrap">
