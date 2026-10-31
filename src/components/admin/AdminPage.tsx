@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
-  Calculator, ChevronDown, Download, Eye, EyeOff, FileText, Inbox, Lock, LogOut, Mail, MessageSquare, Phone, RefreshCw, Search, Sun, Trash2, User,
+  Calculator, ChevronDown, Download, Eye, EyeOff, FileText, Inbox, Lock, LogOut, Mail, MessageSquare, Phone, Plus, RefreshCw, Search, Sun, Trash2, User,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { ENQUIRY_STATUSES, deleteEnquiry, listEnquiries, setEnquiryStatus } from '../../lib/enquiries';
+import { ENQUIRY_STATUSES, deleteEnquiry, listCalculationsFor, listEnquiries, setEnquiryStatus } from '../../lib/enquiries';
 import type { CalculatorSubmission, ContactMessage, EnquiryStatus, EnquiryTable, QuoteRequest } from '../../lib/enquiries';
+import AdminCalculator, { prefillFromContact, prefillFromQuote } from './AdminCalculator';
+import type { CalcPrefill } from './AdminCalculator';
 import './admin.css';
 
 type Row = QuoteRequest | ContactMessage | CalculatorSubmission;
@@ -30,19 +32,20 @@ const fmtDate = (iso: string) =>
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
-const isQuote = (r: Row): r is QuoteRequest => 'source' in r;
+const isQuote = (r: Row): r is QuoteRequest => 'details' in r;
 const isCalc = (r: Row): r is CalculatorSubmission => 'total_units' in r;
 
 const num = (n: number | null, unit = '') => (n === null ? null : `${n.toLocaleString('en-IN', { maximumFractionDigits: 1 })}${unit}`);
 const rupees = (n: number | null) => (n === null ? null : `₹${Math.round(n).toLocaleString('en-IN')}`);
 
-// Calculator runs are anonymous, so the location stands in for a name.
-const rowTitle = (r: Row) => (isCalc(r) ? r.location : r.name);
+// Website calculator runs are anonymous, so the location stands in for a name.
+const rowTitle = (r: Row) => (isCalc(r) ? r.customer_name ?? r.location : r.name);
+const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`;
 
 const TABLE_INFO: Record<EnquiryTable, { intro: string; cols: [string, string, string] }> = {
   quote_requests: { intro: 'Quote requests submitted from the website.', cols: ['Name', 'Contact', 'Project'] },
   contact_messages: { intro: 'Messages submitted through the Contact Us form.', cols: ['Name', 'Contact', 'Subject'] },
-  calculator_submissions: { intro: 'Estimates visitors ran on the Solar Savings Calculator.', cols: ['Location', 'Usage', 'System & savings'] },
+  calculator_submissions: { intro: 'Website calculator estimates, and calculations saved for customers by the team.', cols: ['Customer / location', 'Contact & usage', 'System & savings'] },
 };
 
 // ── Login ────────────────────────────────────────────────────────────────
@@ -97,11 +100,18 @@ function Login() {
 function Details({ row }: { row: Row }) {
   const items: [string, string | null][] = isCalc(row)
     ? [
+        ...(row.source === 'admin' ? [
+          ['Customer', row.customer_name],
+          ['Phone', row.customer_phone],
+          ['Email', row.customer_email],
+          ['Linked enquiry', row.quote_request_id !== null ? `Get a Quote #${row.quote_request_id}` : row.contact_message_id !== null ? `Contact Us #${row.contact_message_id}` : 'None'],
+        ] as [string, string | null][] : []),
+        ['Source', row.source === 'admin' ? 'Saved by admin' : 'Website visitor'],
         ['Project type', cap(row.project_type)],
         ['Location', row.location],
         ['Monthly bill', rupees(row.monthly_bill)],
         ['Annual units', num(row.total_units, ' kWh')],
-        ['System size', `${num(row.capacity_kwp, ' kWp')} (${row.capacity_provided ? 'entered by visitor' : 'recommended'})`],
+        ['System size', `${num(row.capacity_kwp, ' kWp')} (${row.capacity_provided ? 'entered' : 'recommended'})`],
         ['Recommended size', num(row.recommended_kw, ' kWp')],
         ['Tariff', row.tariff === null ? null : `₹${row.tariff} / unit`],
         ['Units per kWp / month', num(row.units_per_kwp)],
@@ -130,6 +140,47 @@ function Details({ row }: { row: Row }) {
   );
 }
 
+// ── Calculations saved against one enquiry ───────────────────────────────
+function LinkedCalcs({ col, id, version, onNew }: { col: 'quote_request_id' | 'contact_message_id'; id: number; version: number; onNew: () => void }) {
+  const [calcs, setCalcs] = useState<CalculatorSubmission[] | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    setCalcs(null);
+    setError('');
+    listCalculationsFor(col === 'quote_request_id' ? { quote_request_id: id } : { contact_message_id: id })
+      .then(c => { if (live) setCalcs(c); })
+      .catch(ex => { if (live) setError((ex as Error).message); });
+    return () => { live = false; };
+  }, [col, id, version]);
+
+  return (
+    <div className="ad-lc">
+      <div className="ad-lc-hd">
+        <h4><Calculator size={15} aria-hidden="true" />Solar calculations</h4>
+        <button className="ad-btn is-xs" onClick={onNew}><Plus size={14} aria-hidden="true" />New calculation</button>
+      </div>
+      {error ? <p className="ad-err">{error}</p>
+        : !calcs ? <p className="ad-hint">Loading…</p>
+        : !calcs.length ? <p className="ad-hint">No calculations yet. Call the customer, then add one with their requirement.</p>
+        : (
+          <ul>
+            {calcs.map(c => (
+              <li key={c.id}>
+                <span className="ad-lc-date">{fmtDate(c.created_at)}</span>
+                <b>{num(c.capacity_kwp, ' kWp')}</b>
+                <span>{rupees(c.monthly_bill)}/mo bill</span>
+                {c.monthly_saving !== null && <span>{rupees(c.monthly_saving)}/mo saving</span>}
+                {c.payback_years !== null && <span>{num(c.payback_years)} yr payback</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+    </div>
+  );
+}
+
 function toCsv(rows: Row[]): string {
   if (!rows.length) return '';
   const cols = Object.keys(rows[0]);
@@ -146,6 +197,10 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
   const [statusFilter, setStatusFilter] = useState<EnquiryStatus | 'all'>('all');
   const [open, setOpen] = useState<number | null>(null);
   const [confirmDel, setConfirmDel] = useState<number | null>(null);
+  // Open calculator dialog (with its customer), and a counter that refreshes linked-calculation lists after a save.
+  const [calc, setCalc] = useState<CalcPrefill | null>(null);
+  const [calcVersion, setCalcVersion] = useState(0);
+  const isCalcPage = table === 'calculator_submissions';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -206,8 +261,11 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
 
       <section className="ad-card ad-panel">
         <div className="ad-toolbar">
+          {isCalcPage && (
+            <button className="ad-btn is-primary ad-new" onClick={() => setCalc({})}><Plus size={16} aria-hidden="true" />New calculation</button>
+          )}
           <label className="ad-search"><Search size={16} aria-hidden="true" />
-            <input type="search" placeholder={table === 'calculator_submissions' ? 'Search location, project type…' : 'Search name, email, phone…'} value={query} onChange={e => setQuery(e.target.value)} aria-label="Search" />
+            <input type="search" placeholder={isCalcPage ? 'Search customer, phone, location…' : 'Search name, email, phone…'} value={query} onChange={e => setQuery(e.target.value)} aria-label="Search" />
           </label>
           <div className="ad-tools">
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as EnquiryStatus | 'all')} aria-label="Filter by status">
@@ -246,6 +304,8 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
                     onAskDelete={() => setConfirmDel(r.id)}
                     onCancelDelete={() => setConfirmDel(null)}
                     onDelete={() => remove(r.id)}
+                    onCalculate={isCalcPage ? undefined : () => setCalc(isQuote(r) ? prefillFromQuote(r) : prefillFromContact(r as ContactMessage))}
+                    calcVersion={calcVersion}
                   />
                 ))}
               </tbody>
@@ -254,6 +314,14 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
           </div>
         )}
       </section>
+
+      {calc && (
+        <AdminCalculator
+          prefill={calc}
+          onClose={() => setCalc(null)}
+          onSaved={() => (isCalcPage ? load() : setCalcVersion(v => v + 1))}
+        />
+      )}
     </>
   );
 }
@@ -267,9 +335,12 @@ interface RowViewProps {
   onAskDelete: () => void;
   onCancelDelete: () => void;
   onDelete: () => void;
+  /** Opens the calculator for this enquiry's customer (enquiry lists only). */
+  onCalculate?: () => void;
+  calcVersion: number;
 }
 
-function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, onCancelDelete, onDelete }: RowViewProps) {
+function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, onCancelDelete, onDelete, onCalculate, calcVersion }: RowViewProps) {
   const summary = isCalc(row)
     ? [num(row.capacity_kwp, ' kWp'), row.monthly_saving !== null && `${rupees(row.monthly_saving)}/mo saving`, row.payback_years !== null && `${num(row.payback_years)} yr payback`].filter(Boolean).join(' · ')
     : isQuote(row)
@@ -284,12 +355,13 @@ function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, o
         <td className="ad-contact">
           {isCalc(row) ? (
             <>
+              {row.customer_phone && <a href={telHref(row.customer_phone)}><Phone size={13} aria-hidden="true" />{row.customer_phone}</a>}
               <span>{rupees(row.monthly_bill)} / month bill</span>
               <span>{cap(row.project_type)} · {num(row.total_units, ' kWh')} / yr</span>
             </>
           ) : (
             <>
-              <a href={`tel:${row.phone.replace(/[^\d+]/g, '')}`}><Phone size={13} aria-hidden="true" />{row.phone}</a>
+              <a href={telHref(row.phone)}><Phone size={13} aria-hidden="true" />{row.phone}</a>
               {row.email && <a href={`mailto:${row.email}`}><Mail size={13} aria-hidden="true" />{row.email}</a>}
             </>
           )}
@@ -309,6 +381,9 @@ function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, o
             </span>
           ) : (
             <>
+              {onCalculate && (
+                <button className="ad-icon is-calc" onClick={onCalculate} aria-label={`Solar calculation for ${title}`} title="Solar calculation"><Calculator size={16} aria-hidden="true" /></button>
+              )}
               <button className="ad-icon" onClick={onToggle} aria-expanded={expanded} aria-label={expanded ? 'Hide details' : 'Show details'}>
                 <ChevronDown size={18} className={expanded ? 'is-flip' : ''} aria-hidden="true" />
               </button>
@@ -318,7 +393,12 @@ function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, o
         </td>
       </tr>
       {expanded && (
-        <tr className="ad-detail-row"><td colSpan={6}><Details row={row} /></td></tr>
+        <tr className="ad-detail-row">
+          <td colSpan={6}>
+            <Details row={row} />
+            {onCalculate && <LinkedCalcs col={isQuote(row) ? 'quote_request_id' : 'contact_message_id'} id={row.id} version={calcVersion} onNew={onCalculate} />}
+          </td>
+        </tr>
       )}
     </>
   );

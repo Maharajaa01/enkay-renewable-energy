@@ -37,6 +37,12 @@ export interface ContactMessage {
 export interface CalculatorSubmission {
   id: number;
   created_at: string;
+  source: 'website' | 'admin';
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  quote_request_id: number | null;
+  contact_message_id: number | null;
   project_type: 'residential' | 'commercial';
   location: string;
   readings: (number | null)[];
@@ -137,24 +143,56 @@ export function submitContact(v: ContactValues) {
 const numOrNull = (v: string) => (Number.isFinite(parseNum(v)) ? parseNum(v) : null);
 const round = (n: number | null, dp = 2) => (n === null ? null : Math.round(n * 10 ** dp) / 10 ** dp);
 
+const calcRow = (i: CalcInputs, r: CalcResult) => ({
+  project_type: i.projectType,
+  location: i.location.trim(),
+  readings: i.readings.map(numOrNull),
+  total_units: round(r.totalUnits),
+  monthly_bill: round(r.currentBill),
+  capacity_kwp: round(r.capacityKwp),
+  capacity_provided: r.capacityProvided,
+  recommended_kw: round(r.recommendedKw),
+  tariff: numOrNull(i.tariff),
+  units_per_kwp: numOrNull(i.unitsPerKwp),
+  cost_per_kwp: numOrNull(i.costPerKwp),
+  monthly_saving: round(r.monthlySaving),
+  annual_saving: round(r.annualSaving),
+  payback_years: round(r.paybackYears),
+});
+
 // Logged in the background for /admin — the visitor's estimate never depends on this succeeding.
 export function saveCalculation(i: CalcInputs, r: CalcResult) {
-  insert('calculator_submissions', {
-    project_type: i.projectType,
-    location: i.location.trim(),
-    readings: i.readings.map(numOrNull),
-    total_units: round(r.totalUnits),
-    monthly_bill: round(r.currentBill),
-    capacity_kwp: round(r.capacityKwp),
-    capacity_provided: r.capacityProvided,
-    recommended_kw: round(r.recommendedKw),
-    tariff: numOrNull(i.tariff),
-    units_per_kwp: numOrNull(i.unitsPerKwp),
-    cost_per_kwp: numOrNull(i.costPerKwp),
-    monthly_saving: round(r.monthlySaving),
-    annual_saving: round(r.annualSaving),
-    payback_years: round(r.paybackYears),
-  }).catch(err => console.error('Calculation log failed', err));
+  insert('calculator_submissions', calcRow(i, r)).catch(err => console.error('Calculation log failed', err));
+}
+
+/** The customer an admin calculation is saved against, optionally linked to their enquiry. */
+export interface CalcCustomer {
+  name: string;
+  phone: string;
+  email: string;
+  quoteRequestId: number | null;
+  contactMessageId: number | null;
+}
+
+export function saveAdminCalculation(i: CalcInputs, r: CalcResult, c: CalcCustomer) {
+  return insert('calculator_submissions', {
+    ...calcRow(i, r),
+    source: 'admin',
+    status: 'contacted',
+    customer_name: c.name.trim(),
+    customer_phone: c.phone.trim(),
+    customer_email: orNull(c.email),
+    quote_request_id: c.quoteRequestId,
+    contact_message_id: c.contactMessageId,
+  });
+}
+
+/** Calculations an admin saved against one enquiry, newest first. */
+export async function listCalculationsFor(link: { quote_request_id: number } | { contact_message_id: number }) {
+  const [col, id] = Object.entries(link)[0];
+  const { data, error } = await supabase.from('calculator_submissions').select('*').eq(col, id).order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as CalculatorSubmission[];
 }
 
 export async function listEnquiries<T>(table: EnquiryTable): Promise<T[]> {
