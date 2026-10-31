@@ -2,6 +2,8 @@ import { supabase } from './supabase';
 import { sendFormEmail } from './formSubmit';
 import type { ContactValues } from '../components/contact/contactLogic';
 import type { QuoteValues } from '../components/quote/quoteLogic';
+import type { CalcInputs, CalcResult } from '../components/calculator/calculatorLogic';
+import { parseNum } from '../components/calculator/calculatorLogic';
 
 export type EnquiryStatus = 'new' | 'contacted' | 'closed';
 export const ENQUIRY_STATUSES: EnquiryStatus[] = ['new', 'contacted', 'closed'];
@@ -32,7 +34,27 @@ export interface ContactMessage {
   status: EnquiryStatus;
 }
 
-export type EnquiryTable = 'quote_requests' | 'contact_messages';
+export interface CalculatorSubmission {
+  id: number;
+  created_at: string;
+  project_type: 'residential' | 'commercial';
+  location: string;
+  readings: (number | null)[];
+  total_units: number;
+  monthly_bill: number;
+  capacity_kwp: number;
+  capacity_provided: boolean;
+  recommended_kw: number;
+  tariff: number | null;
+  units_per_kwp: number | null;
+  cost_per_kwp: number | null;
+  monthly_saving: number | null;
+  annual_saving: number | null;
+  payback_years: number | null;
+  status: EnquiryStatus;
+}
+
+export type EnquiryTable = 'quote_requests' | 'contact_messages' | 'calculator_submissions';
 
 const orNull = (v: string) => v.trim() || null;
 
@@ -110,6 +132,29 @@ export function submitContact(v: ContactValues) {
       Message: v.message.trim(),
     }, v.email.trim()),
   );
+}
+
+const numOrNull = (v: string) => (Number.isFinite(parseNum(v)) ? parseNum(v) : null);
+const round = (n: number | null, dp = 2) => (n === null ? null : Math.round(n * 10 ** dp) / 10 ** dp);
+
+// Logged in the background for /admin — the visitor's estimate never depends on this succeeding.
+export function saveCalculation(i: CalcInputs, r: CalcResult) {
+  insert('calculator_submissions', {
+    project_type: i.projectType,
+    location: i.location.trim(),
+    readings: i.readings.map(numOrNull),
+    total_units: round(r.totalUnits),
+    monthly_bill: round(r.currentBill),
+    capacity_kwp: round(r.capacityKwp),
+    capacity_provided: r.capacityProvided,
+    recommended_kw: round(r.recommendedKw),
+    tariff: numOrNull(i.tariff),
+    units_per_kwp: numOrNull(i.unitsPerKwp),
+    cost_per_kwp: numOrNull(i.costPerKwp),
+    monthly_saving: round(r.monthlySaving),
+    annual_saving: round(r.annualSaving),
+    payback_years: round(r.paybackYears),
+  }).catch(err => console.error('Calculation log failed', err));
 }
 
 export async function listEnquiries<T>(table: EnquiryTable): Promise<T[]> {

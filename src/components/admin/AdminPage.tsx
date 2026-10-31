@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
-  ChevronDown, Download, Eye, EyeOff, FileText, Inbox, Lock, LogOut, Mail, MessageSquare, Phone, RefreshCw, Search, Sun, Trash2, User,
+  Calculator, ChevronDown, Download, Eye, EyeOff, FileText, Inbox, Lock, LogOut, Mail, MessageSquare, Phone, RefreshCw, Search, Sun, Trash2, User,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ENQUIRY_STATUSES, deleteEnquiry, listEnquiries, setEnquiryStatus } from '../../lib/enquiries';
-import type { ContactMessage, EnquiryStatus, EnquiryTable, QuoteRequest } from '../../lib/enquiries';
+import type { CalculatorSubmission, ContactMessage, EnquiryStatus, EnquiryTable, QuoteRequest } from '../../lib/enquiries';
 import './admin.css';
 
-type Row = QuoteRequest | ContactMessage;
+type Row = QuoteRequest | ContactMessage | CalculatorSubmission;
 
 // Supabase Auth signs in by email, so each admin username maps to its account email.
 const ADMIN_USERS: Record<string, string> = {
@@ -20,6 +20,7 @@ const LOGIN_PATH = '/admin';
 const PAGES: { path: string; table: EnquiryTable; label: string; icon: typeof FileText }[] = [
   { path: '/admin/get-a-quote', table: 'quote_requests', label: 'Get a Quote', icon: FileText },
   { path: '/admin/contact-us', table: 'contact_messages', label: 'Contact Us', icon: MessageSquare },
+  { path: '/admin/calculator', table: 'calculator_submissions', label: 'Calculator', icon: Calculator },
 ];
 
 const currentPath = () => window.location.pathname.replace(/\/+$/, '') || '/';
@@ -30,6 +31,19 @@ const fmtDate = (iso: string) =>
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 const isQuote = (r: Row): r is QuoteRequest => 'source' in r;
+const isCalc = (r: Row): r is CalculatorSubmission => 'total_units' in r;
+
+const num = (n: number | null, unit = '') => (n === null ? null : `${n.toLocaleString('en-IN', { maximumFractionDigits: 1 })}${unit}`);
+const rupees = (n: number | null) => (n === null ? null : `₹${Math.round(n).toLocaleString('en-IN')}`);
+
+// Calculator runs are anonymous, so the location stands in for a name.
+const rowTitle = (r: Row) => (isCalc(r) ? r.location : r.name);
+
+const TABLE_INFO: Record<EnquiryTable, { intro: string; cols: [string, string, string] }> = {
+  quote_requests: { intro: 'Quote requests submitted from the website.', cols: ['Name', 'Contact', 'Project'] },
+  contact_messages: { intro: 'Messages submitted through the Contact Us form.', cols: ['Name', 'Contact', 'Subject'] },
+  calculator_submissions: { intro: 'Estimates visitors ran on the Solar Savings Calculator.', cols: ['Location', 'Usage', 'System & savings'] },
+};
 
 // ── Login ────────────────────────────────────────────────────────────────
 function Login() {
@@ -81,7 +95,23 @@ function Login() {
 
 // ── Detail fields shown when a row is expanded ───────────────────────────
 function Details({ row }: { row: Row }) {
-  const items: [string, string | null][] = isQuote(row)
+  const items: [string, string | null][] = isCalc(row)
+    ? [
+        ['Project type', cap(row.project_type)],
+        ['Location', row.location],
+        ['Monthly bill', rupees(row.monthly_bill)],
+        ['Annual units', num(row.total_units, ' kWh')],
+        ['System size', `${num(row.capacity_kwp, ' kWp')} (${row.capacity_provided ? 'entered by visitor' : 'recommended'})`],
+        ['Recommended size', num(row.recommended_kw, ' kWp')],
+        ['Tariff', row.tariff === null ? null : `₹${row.tariff} / unit`],
+        ['Units per kWp / month', num(row.units_per_kwp)],
+        ['Cost per kWp', rupees(row.cost_per_kwp)],
+        ['Monthly saving', rupees(row.monthly_saving)],
+        ['Annual saving', rupees(row.annual_saving)],
+        ['Payback', num(row.payback_years, ' years')],
+        ['Bi-monthly readings', row.readings.map((u, i) => `R${i + 1}: ${u ?? '—'}`).join('  ·  ')],
+      ]
+    : isQuote(row)
     ? [
         ['Source', row.source === 'quote_page' ? 'Get a Quote page' : 'Quick quote popup'],
         ['Project type', row.project_type && cap(row.project_type)],
@@ -94,7 +124,7 @@ function Details({ row }: { row: Row }) {
   return (
     <dl className="ad-details">
       {items.map(([k, v]) => (
-        <div key={k} className={k === 'Details' || k === 'Message' ? 'is-wide' : ''}><dt>{k}</dt><dd>{v || '—'}</dd></div>
+        <div key={k} className={k === 'Details' || k === 'Message' || k === 'Bi-monthly readings' ? 'is-wide' : ''}><dt>{k}</dt><dd>{v || '—'}</dd></div>
       ))}
     </dl>
   );
@@ -166,7 +196,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
       <div className="ad-head">
         <div>
           <h1>{label} List</h1>
-          <p>{table === 'quote_requests' ? 'Quote requests submitted from the website.' : 'Messages submitted through the Contact Us form.'}</p>
+          <p>{TABLE_INFO[table].intro}</p>
         </div>
         <div className="ad-counts">
           <span><b>{data.length}</b>Total</span>
@@ -177,7 +207,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
       <section className="ad-card ad-panel">
         <div className="ad-toolbar">
           <label className="ad-search"><Search size={16} aria-hidden="true" />
-            <input type="search" placeholder="Search name, email, phone…" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search" />
+            <input type="search" placeholder={table === 'calculator_submissions' ? 'Search location, project type…' : 'Search name, email, phone…'} value={query} onChange={e => setQuery(e.target.value)} aria-label="Search" />
           </label>
           <div className="ad-tools">
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as EnquiryStatus | 'all')} aria-label="Filter by status">
@@ -199,9 +229,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Name</th>
-                  <th>Contact</th>
-                  <th>{table === 'quote_requests' ? 'Project' : 'Subject'}</th>
+                  {TABLE_INFO[table].cols.map(c => <th key={c}>{c}</th>)}
                   <th>Status</th>
                   <th aria-label="Actions" />
                 </tr>
@@ -242,21 +270,33 @@ interface RowViewProps {
 }
 
 function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, onCancelDelete, onDelete }: RowViewProps) {
-  const summary = isQuote(row)
+  const summary = isCalc(row)
+    ? [num(row.capacity_kwp, ' kWp'), row.monthly_saving !== null && `${rupees(row.monthly_saving)}/mo saving`, row.payback_years !== null && `${num(row.payback_years)} yr payback`].filter(Boolean).join(' · ')
+    : isQuote(row)
     ? [row.project_type && cap(row.project_type), row.capacity, row.location].filter(Boolean).join(' · ') || row.details || '—'
     : row.subject;
+  const title = rowTitle(row);
   return (
     <>
       <tr className={`${expanded ? 'is-open' : ''}${row.status === 'new' ? ' is-new' : ''}`}>
         <td className="ad-date">{fmtDate(row.created_at)}</td>
-        <td><b>{row.name}</b></td>
+        <td className="ad-name"><b>{title}</b></td>
         <td className="ad-contact">
-          <a href={`tel:${row.phone.replace(/[^\d+]/g, '')}`}><Phone size={13} aria-hidden="true" />{row.phone}</a>
-          {row.email && <a href={`mailto:${row.email}`}><Mail size={13} aria-hidden="true" />{row.email}</a>}
+          {isCalc(row) ? (
+            <>
+              <span>{rupees(row.monthly_bill)} / month bill</span>
+              <span>{cap(row.project_type)} · {num(row.total_units, ' kWh')} / yr</span>
+            </>
+          ) : (
+            <>
+              <a href={`tel:${row.phone.replace(/[^\d+]/g, '')}`}><Phone size={13} aria-hidden="true" />{row.phone}</a>
+              {row.email && <a href={`mailto:${row.email}`}><Mail size={13} aria-hidden="true" />{row.email}</a>}
+            </>
+          )}
         </td>
         <td className="ad-summary">{summary}</td>
-        <td>
-          <select className={`ad-status is-${row.status}`} value={row.status} onChange={e => onStatus(e.target.value as EnquiryStatus)} aria-label={`Status for ${row.name}`}>
+        <td className="ad-st">
+          <select className={`ad-status is-${row.status}`} value={row.status} onChange={e => onStatus(e.target.value as EnquiryStatus)} aria-label={`Status for ${title}`}>
             {ENQUIRY_STATUSES.map(s => <option key={s} value={s}>{cap(s)}</option>)}
           </select>
         </td>
@@ -272,7 +312,7 @@ function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, o
               <button className="ad-icon" onClick={onToggle} aria-expanded={expanded} aria-label={expanded ? 'Hide details' : 'Show details'}>
                 <ChevronDown size={18} className={expanded ? 'is-flip' : ''} aria-hidden="true" />
               </button>
-              <button className="ad-icon is-danger" onClick={onAskDelete} aria-label={`Delete entry from ${row.name}`}><Trash2 size={16} aria-hidden="true" /></button>
+              <button className="ad-icon is-danger" onClick={onAskDelete} aria-label={`Delete entry from ${title}`}><Trash2 size={16} aria-hidden="true" /></button>
             </>
           )}
         </td>

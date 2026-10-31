@@ -10,6 +10,7 @@ import SiteFooter from '../home/SiteFooter';
 import QuoteModal from '../home/QuoteModal';
 import Reveal from '../Reveal';
 import CountUp from './CountUp';
+import { saveCalculation } from '../../lib/enquiries';
 import {
   EMPTY_INPUTS, READING_LABELS, calculate, inr, oneDecimal, validate,
 } from './calculatorLogic';
@@ -96,7 +97,9 @@ export default function CalculatorPage({ onNavigate, quoteOpen, onQuoteOpen, onQ
       if (first) document.getElementById(`sc-${first}`)?.focus();
       return;
     }
-    setResult(calculate(inputs));
+    const next = calculate(inputs);
+    setResult(next);
+    saveCalculation(inputs, next);
     // On stacked (tablet/mobile) layouts the results sit below the form, so bring them into view.
     if (window.matchMedia('(max-width: 1100px)').matches) {
       requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
