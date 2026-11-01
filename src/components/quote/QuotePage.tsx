@@ -1,21 +1,24 @@
 import { useCallback, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
-  ArrowRight, BadgeIndianRupee, Building, Building2, Check, ClipboardList, FileCheck2, FileText, Home, Info, Landmark, Leaf,
-  Lock, Mail, MapPin, MessageSquare, Pencil, Phone, Send, Settings, ShieldCheck, Sprout, Sun, Timer, User, Users, Zap,
+  ArrowRight, AlertTriangle, BadgeIndianRupee, Building2, Calculator, Check, ClipboardList, FileText, Home, Info, Leaf,
+  Lock, Mail, MapPin, MessageSquare, Phone, Receipt, Send, Settings, ShieldCheck, Sprout, Sun, Timer, User, Users, Zap,
 } from 'lucide-react';
 import type { NavSection } from '../Navbar';
 import SiteFooter from '../home/SiteFooter';
 import QuoteModal from '../home/QuoteModal';
+import CountUp from '../calculator/CountUp';
 import Reveal from '../Reveal';
+
 import { COMPANY_INFO } from '../../data/solarData';
-import { BANK_DETAILS, QUOTE_BENEFITS, SUBSIDIES, TERMS } from './quoteData';
+import { QUOTE_BENEFITS, SUBSIDIES, TERMS } from './quoteData';
 import { EMPTY_QUOTE, validateQuote } from './quoteLogic';
 import type { QuoteErrors, QuoteProjectType, QuoteValues } from './quoteLogic';
 import { submitQuote } from '../../lib/enquiries';
 import '../home/home.css';
 import './quote.css';
+import '../calculator/calculator.css';
 
 interface Props {
   onNavigate: (section: NavSection, anchorId?: string) => void;
@@ -39,9 +42,14 @@ const TRUST = [
 
 const ORDER: (keyof QuoteValues)[] = ['name', 'email', 'phone', 'capacity', 'location', 'bill', 'details'];
 
-const ToBeQuoted = ({ children = 'To be quoted' }: { children?: ReactNode }) => (
-  <span className="qt-tbq"><Pencil size={14} aria-hidden="true" />{children}</span>
-);
+const fmtInr0 = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
+
+const STEPS = [
+  { icon: Receipt,    title: '1. Share your bill',          text: 'Enter your average monthly electricity bill and location.',   tone: '' },
+  { icon: Calculator, title: '2. Explore your estimate',    text: 'See estimated savings based on the assumptions you provide.', tone: '' },
+  { icon: FileText,   title: '3. Get a personalized quote', text: 'Our team prepares a detailed quotation for your site.',       tone: 'is-yellow' },
+];
+
 
 export default function QuotePage({ onNavigate, quoteOpen, onQuoteOpen, onQuoteClose }: Props) {
   const openQuote = useCallback(() => onNavigate('quote'), [onNavigate]);
@@ -242,6 +250,48 @@ export default function QuotePage({ onNavigate, quoteOpen, onQuoteOpen, onQuoteC
         </div>
       </section>
 
+      {/* ── Subsidy Information ── */}
+      <section className="sc-sub" aria-labelledby="qt-sub-title">
+        <div className="hp-wrap">
+          <div className="sc-sub-grid">
+            <Reveal className="sc-sub-intro" from="left">
+              <div className="sc-eyebrow">Subsidy Information</div>
+              <h2 id="qt-sub-title">Solar subsidy eligibility</h2>
+              <p>Client-provided subsidy figures for eligible residential rooftop solar installations. Our team can guide you through the application process.</p>
+            </Reveal>
+            {SUBSIDIES.map((s, i) => (
+              <Reveal key={s.who[0]} className="sc-sub-item" delay={0.15 + i * 0.15}>
+                <article className="sc-sub-card">
+                  <small>{s.who.join(' ')}</small>
+                  <h3>{s.who[0] === 'PM Surya Ghar: Muft Bijli' ? 'PM Surya Ghar: Muft Bijli Yojana' : 'State Government Subsidy'}</h3>
+                  <div className="sc-amt"><CountUp value={parseInt(s.amount.replace(/\D/g, ''), 10)} format={fmtInr0} duration={1.4} onView /></div>
+                  <p>Subsidy eligibility</p>
+                  <span className="sc-tag"><Info size={14} aria-hidden="true" />Subject to scheme eligibility</span>
+                </article>
+              </Reveal>
+            ))}
+          </div>
+          <Reveal className="sc-note" role="note" delay={0.2}>
+            <AlertTriangle size={20} aria-hidden="true" />
+            <p><b>Please note:</b> These are client-provided subsidy figures and not an unconditional guarantee. Actual subsidy approval and amount depend on the applicable scheme requirements. Please verify your eligibility under the applicable scheme.</p>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ── How it works ── */}
+      <section className="sc-steps" aria-label="How it works">
+        <div className="hp-wrap sc-steps-grid">
+          {STEPS.map(({ icon: Icon, title, text, tone }, i) => (
+            <Reveal key={title} className="sc-step-item" delay={i * 0.15}>
+              <article className="sc-step">
+                <span className={`sc-badge is-soft ${tone}`}><Icon size={24} /></span>
+                <div><h3>{title}</h3><p>{text}</p></div>
+              </article>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
       {/* ── Commercial bid & terms ── */}
       <section className="qt-bid-sec" aria-labelledby="qt-bid-title">
         <div className="hp-wrap">
@@ -251,56 +301,6 @@ export default function QuotePage({ onNavigate, quoteOpen, onQuoteOpen, onQuoteC
             <p>Quotation for a Solar Power Plant System on the roof of the residence.</p>
           </Reveal>
 
-          <div className="qt-bid-grid">
-            <Reveal as="article" className="qt-bid" from="left">
-              <div className="qt-bid-top">
-                <div><small>Commercial Bid</small><h3>Price Details</h3></div>
-                <span className="qt-pill"><MapPin size={14} aria-hidden="true" />Price basis: Chennai</span>
-              </div>
-              <div className="qt-prod">
-                <span className="qt-badge"><Sun size={24} aria-hidden="true" /></span>
-                <div>
-                  <h4>5000 Wp (5 kWp) On-Grid Solar Power Plant System with Components</h4>
-                  <p>Refer to the 5 kWp Bill of Materials for included components.</p>
-                </div>
-              </div>
-              <dl className="qt-table">
-                <div><dt>Quantity</dt><dd><b>1 No.</b></dd></div>
-                <div><dt>Amount</dt><dd><ToBeQuoted /></dd></div>
-                <div><dt>Add: GST @ 5%</dt><dd><ToBeQuoted /></dd></div>
-                <div className="is-total"><dt>Total Amount (Rs.)</dt><dd><ToBeQuoted /></dd></div>
-              </dl>
-              <p className="qt-bid-note"><FileCheck2 size={22} aria-hidden="true" />The technical and commercial proposal includes the technical specifications and details to fulfil your requirements, and commercial terms with our best price.</p>
-            </Reveal>
-
-            <div className="qt-stack">
-              <Reveal as="article" className="qt-mini" from="right" delay={0.1}>
-                <h3><span className="qt-badge is-soft is-yellow"><Landmark size={22} aria-hidden="true" /></span>Subsidy Eligibility</h3>
-                <div className="qt-subs">
-                  {SUBSIDIES.map(s => (
-                    <div key={s.amount}>
-                      <p>{s.who.map((w, i) => <span key={w}>{i > 0 && <br />}{w}</span>)}</p>
-                      <strong>{s.amount}</strong>
-                      <small>Subsidy eligible</small>
-                    </div>
-                  ))}
-                </div>
-                <p className="qt-fine"><Info size={16} aria-hidden="true" />Actual subsidy approval and eligibility depend on the applicable scheme requirements.</p>
-              </Reveal>
-
-              <Reveal as="article" className="qt-mini" from="right" delay={0.25}>
-                <h3><span className="qt-badge is-soft"><Building size={22} aria-hidden="true" /></span>Bank Account Details</h3>
-                <dl className="qt-bank">
-                  {BANK_DETAILS.map(r => (
-                    <div key={r.label}>
-                      <dt>{r.label}</dt>
-                      <dd className={r.mono ? 'is-mono' : ''}>{r.pending ? <span className="qt-tbq is-plain">{r.pending}</span> : r.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </Reveal>
-            </div>
-          </div>
 
           <Reveal as="section" className="qt-terms" aria-labelledby="qt-terms-title">
             <header>

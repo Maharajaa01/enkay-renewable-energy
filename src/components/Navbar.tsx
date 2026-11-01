@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { COMPANY_INFO } from '../data/solarData';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
-export type NavSection = 'home' | 'about' | 'services' | 'products' | 'calculator' | 'contact' | 'quote' | 'privacy' | 'terms';
+export type NavSection = 'home' | 'about' | 'services' | 'products' | 'contact' | 'quote' | 'privacy' | 'terms';
 
 interface NavbarProps {
   activePage?: NavSection;
@@ -143,7 +143,6 @@ const NAV_ITEMS: { id: NavSection; label: string; anchor?: string; hasDropdown?:
   { id: 'about',      label: 'About Us' },
   { id: 'services',   label: 'Services & Solutions' },
   { id: 'products',   label: 'Products & Brands' },
-  { id: 'calculator', label: 'Solar Savings Calculator', anchor: 'calculator' },
   { id: 'contact',    label: 'Contact Us' },
 ];
 
