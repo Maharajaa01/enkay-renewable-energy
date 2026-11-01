@@ -340,6 +340,102 @@
 .ad-res dt { color: #5b6560; }
 .ad-res dd { margin: 0; font-weight: 700; color: var(--ad-dark); text-align: right; }
 
+/* ── Solar Capacity Panel (right side of calculator) ── */
+.ad-solar-panel {
+  position: sticky; top: 0;
+  display: grid; gap: 16px; align-content: start;
+  min-width: 0;
+}
+
+/* Calculate button */
+.ad-calc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 14px 20px;
+  background: linear-gradient(135deg, #0d3721 0%, #2b823e 100%);
+  color: #fff; border: none; border-radius: 14px;
+  font: 700 16px 'Montserrat', 'Inter', sans-serif;
+  cursor: pointer; transition: opacity .15s, transform .1s, box-shadow .15s;
+  box-shadow: 0 4px 16px rgba(13,55,33,.25);
+  letter-spacing: .01em;
+}
+.ad-calc-btn:hover { opacity: .92; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(13,55,33,.32); }
+.ad-calc-btn:active { transform: translateY(0); }
+.ad-calc-btn svg { flex: none; color: #f5c837; }
+
+/* Validation error below button */
+.ad-calc-val-err {
+  padding: 10px 14px; border-radius: 10px;
+  background: #fdecea; border: 1px solid #f5c2bd; color: #8a1c13; font-size: 13px;
+}
+
+/* Instruction hint shown before calculation */
+.ad-solar-hint {
+  padding: 20px 18px; border-radius: 14px;
+  background: #f4f9f5; border: 1px dashed #c5deca;
+  text-align: center;
+}
+.ad-solar-hint p {
+  font-size: 14px; color: #5b6560; line-height: 1.6; margin: 0;
+}
+.ad-solar-hint strong { color: #0d3721; }
+
+/* Result panel */
+.ad-solar-result { display: grid; gap: 14px; }
+.ad-solar-result.is-stale { opacity: .7; }
+
+.ad-solar-stale-msg {
+  padding: 8px 12px; border-radius: 8px;
+  background: #fff8e1; border: 1px solid #ffe082; color: #795548;
+  font-size: 13px; font-weight: 600;
+}
+
+/* Hero block */
+.ad-solar-hero {
+  display: grid; gap: 6px; padding: 20px 18px; border-radius: 14px;
+  background: linear-gradient(135deg, #0d3721 0%, #1a5c34 100%);
+  color: #cfe3d6; text-align: center;
+  box-shadow: 0 6px 24px rgba(13,55,33,.22);
+}
+.ad-solar-hero-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  color: #a8d5b5;
+}
+.ad-solar-hero-value {
+  display: flex; align-items: baseline; justify-content: center; gap: 6px;
+  font: 700 44px/1.1 'Montserrat', sans-serif; color: #f5c837;
+}
+.ad-solar-hero-unit {
+  font: 700 22px/1.1 'Montserrat', sans-serif; color: #f5c837;
+}
+
+/* Breakdown section */
+.ad-solar-breakdown {
+  padding: 14px 16px; border-radius: 14px;
+  background: #f4f9f5; border: 1px solid #d7eadb;
+  display: grid; gap: 10px;
+}
+.ad-solar-breakdown-title {
+  font: 700 11px 'Inter', sans-serif; text-transform: uppercase;
+  letter-spacing: .06em; color: #7b877f; margin: 0;
+}
+.ad-solar-dl { display: grid; gap: 0; margin: 0; }
+.ad-solar-dl div {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; padding: 8px 0; border-bottom: 1px solid #e1ede4; font-size: 13px;
+}
+.ad-solar-dl div:last-child { border-bottom: 0; }
+.ad-solar-dl dt { color: #5b6560; }
+.ad-solar-dl dd { margin: 0; font-weight: 600; color: #0d3721; text-align: right; }
+.ad-solar-dl div.is-highlight {
+  background: #e6f4ea; margin: 4px -8px -8px; padding: 10px 8px;
+  border-radius: 0 0 8px 8px; border-bottom: 0;
+}
+.ad-solar-dl div.is-highlight dt { color: #195e3b; font-weight: 700; }
+.ad-solar-dl div.is-highlight dd strong { font-size: 15px; color: #0d3721; }
+.ad-solar-formula-note {
+  font-size: 11px; color: #9aa89f; margin: 0; text-align: center; font-style: italic;
+}
+
 /* Dialog becomes a full-screen sheet on tablets and phones */
 @media (max-width: 900px) {
   .ad-new { flex: 1 1 100%; justify-content: center; height: 44px; }
@@ -348,15 +444,20 @@
   .ad-modal-hd { padding: 10px 12px 10px 16px; padding-top: max(10px, env(safe-area-inset-top)); }
   .ad-modal-body { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 18px; }
   .ad-res { position: static; }
+  .ad-solar-panel { position: static; }
   .ad-modal-ft { padding: 10px 16px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .ad-modal-ft .ad-btn { flex: 1; justify-content: center; height: 46px; }
   .ad-in { height: 46px; font-size: 16px; }
   .ad-seg { justify-self: stretch; }
   .ad-seg button { height: 40px; }
   .ad-lc-hd .ad-btn { height: 36px; }
+  .ad-solar-hero-value { font-size: 36px; }
+  .ad-calc-btn { font-size: 15px; padding: 13px 18px; }
 }
 @media (max-width: 520px) {
   .ad-grid { grid-template-columns: minmax(0, 1fr); }
   .ad-grid.is-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ad-res-hero b { font-size: 24px; }
+  .ad-solar-hero-value { font-size: 30px; }
+  .ad-solar-hero-unit { font-size: 18px; }
 }
