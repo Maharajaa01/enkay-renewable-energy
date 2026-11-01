@@ -144,7 +144,7 @@ export default function ContactPage({ onNavigate, quoteOpen, onQuoteOpen, onQuot
             <Reveal className="ct-map" scale={0.96} delay={0.2}>
               <iframe
                 src={MAP_EMBED_URL}
-                title="Map showing the ENKAY Renewable Energy office in Aminjikarai, Chennai"
+                title="Map showing the ENKAY Renewables Energy office in Aminjikarai, Chennai"
                 loading="lazy"
                 allowFullScreen
                 referrerPolicy="strict-origin-when-cross-origin"

@@ -73,7 +73,7 @@ function Login() {
       <form className="ad-card ad-login-card" onSubmit={submit}>
         <img className="ad-brand-logo" src="/assets/enkay-logo.png" alt="ENKAY Renewables Energy" />
         <h1>Administrator Login</h1>
-        <p>ENKAY Renewable Energy — sign in to manage enquiries.</p>
+        <p>ENKAY Renewables Energy — sign in to manage enquiries.</p>
         <label>Username
           <span className="ad-field"><User size={16} aria-hidden="true" />
             <input required autoComplete="username" placeholder="Administrator" value={username} onChange={e => setUsername(e.target.value)} />
@@ -90,7 +90,7 @@ function Login() {
         {error && <p className="ad-err" role="alert">{error}</p>}
         <button className="ad-btn is-primary" disabled={busy}>{busy ? 'Signing in…' : 'Login'}</button>
       </form>
-      <p className="ad-login-foot">© {new Date().getFullYear()} ENKAY Renewable Energy · Admin access only</p>
+      <p className="ad-login-foot">© {new Date().getFullYear()} ENKAY Renewables Energy · Admin access only</p>
       </div>
     </div>
   );

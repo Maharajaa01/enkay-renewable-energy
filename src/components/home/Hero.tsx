@@ -34,7 +34,7 @@ export default function Hero({ onQuote, onExplore }: { onQuote: () => void; onEx
             <motion.span className="hp-h1-line hp-h1-accent" {...enter(0.4)}>Power Your Future</motion.span>
           </h1>
           <motion.p {...enter(0.55)}>
-            ENKAY Renewable Energy provides end-to-end solar solutions for homes, industries and businesses.
+            ENKAY Renewables Energy provides end-to-end solar solutions for homes, industries and businesses.
             We deliver high-quality solar products, trusted brands and expert installation services.
           </motion.p>
           <div className="hp-hero-actions">

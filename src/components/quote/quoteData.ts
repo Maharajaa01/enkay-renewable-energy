@@ -14,7 +14,7 @@ export const SUBSIDIES = [
 ];
 
 export const BANK_DETAILS: { label: string; value?: string; mono?: boolean; pending?: string }[] = [
-  { label: 'Account Name', value: 'ENKAY Renewable ENERGY' },
+  { label: 'Account Name', value: 'ENKAY Renewables Energy' },
   { label: 'Account Number', value: '196321010000154', mono: true },
   { label: 'Bank & Branch Name', value: 'UNION BANK, Madhavaram Branch' },
   { label: 'IFSC Code', pending: 'To be confirmed' },

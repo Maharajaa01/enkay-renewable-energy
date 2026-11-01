@@ -99,7 +99,7 @@ export default function LogoIntro({ onComplete }: LogoIntroProps) {
   return (
     <div
       role="dialog"
-      aria-label="ENKAY Renewable Energy — Introduction"
+      aria-label="ENKAY Renewables Energy — Introduction"
       aria-modal="true"
       className="enkay-intro-overlay"
       style={{
