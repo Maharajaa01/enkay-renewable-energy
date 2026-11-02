@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { COMPANY_INFO } from '../data/solarData';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
-export type NavSection = 'home' | 'about' | 'services' | 'products' | 'calculator' | 'contact' | 'quote' | 'privacy' | 'terms';
+export type NavSection = 'home' | 'about' | 'services' | 'products' | 'contact' | 'quote' | 'privacy' | 'terms';
 
 interface NavbarProps {
   activePage?: NavSection;
@@ -54,8 +54,18 @@ function TopBar() {
           <span style={{ fontSize: '0.78rem' }}>📍</span>
           Aminjikarai, Chennai
         </span>
+        <AdminShortcut />
       </div>
     </div>
+  );
+}
+
+// Small circular "L" shortcut to the existing /admin login page
+function AdminShortcut() {
+  return (
+    <a href="/admin" className="enkay-admin-shortcut" title="Admin Login" aria-label="Admin Login">
+      L
+    </a>
   );
 }
 
@@ -143,7 +153,6 @@ const NAV_ITEMS: { id: NavSection; label: string; anchor?: string; hasDropdown?:
   { id: 'about',      label: 'About Us' },
   { id: 'services',   label: 'Services & Solutions' },
   { id: 'products',   label: 'Products & Brands' },
-  { id: 'calculator', label: 'Solar Savings Calculator', anchor: 'calculator' },
   { id: 'contact',    label: 'Contact Us' },
 ];
 
@@ -475,7 +484,10 @@ export default function Navbar({ activePage = 'home', onNavigate, onQuoteClick, 
               <span style={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800, fontSize: '0.72rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#1d6b1d' }}>Contact &amp; Info</span>
               <a href={`tel:${COMPANY_INFO.phoneRaw}`} style={drawerLinkStyle}><span>📞</span>{COMPANY_INFO.phone}</a>
               <a href={`mailto:${COMPANY_INFO.email}`} style={{ ...drawerLinkStyle, wordBreak: 'break-all' }}><span>✉️</span>{COMPANY_INFO.email}</a>
-              <span style={drawerLinkStyle}><span>📍</span>Aminjikarai, Chennai</span>
+              <span style={{ ...drawerLinkStyle, justifyContent: 'space-between' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span>📍</span>Aminjikarai, Chennai</span>
+                <AdminShortcut />
+              </span>
               <span style={{ marginTop: 4, padding: '0.6rem 0.8rem', background: '#1d3a1d', borderRadius: 8, color: '#f5b800', fontFamily: 'Manrope, sans-serif', fontWeight: 700, fontSize: '0.68rem', letterSpacing: '0.08em', textAlign: 'center' }}>SOLAR POWER • PROGRESS • RELIABLE</span>
             </div>
           </div>

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
-  Calculator, ChevronDown, Download, Eye, EyeOff, FileText, Inbox, Lock, LogOut, Mail, MessageSquare, Phone, Plus, RefreshCw, Search, Sun, Trash2, User,
+  Calculator, ChevronDown, Download, Eye, EyeOff, FileText, Inbox, Lock, LogOut, Mail, MessageSquare, Phone, Plus, QrCode, RefreshCw, Search, Sun, Trash2, User,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ENQUIRY_STATUSES, deleteEnquiry, listCalculationsFor, listEnquiries, setEnquiryStatus } from '../../lib/enquiries';
 import type { CalculatorSubmission, ContactMessage, EnquiryStatus, EnquiryTable, QuoteRequest } from '../../lib/enquiries';
+import { CONTACT_URL, buildQrPng, buildQrSvg, logoToDataUri, saveBlob } from '../../lib/contactQr';
 import AdminCalculator, { prefillFromContact, prefillFromQuote } from './AdminCalculator';
 import type { CalcPrefill } from './AdminCalculator';
 import './admin.css';
@@ -23,6 +24,12 @@ const PAGES: { path: string; table: EnquiryTable; label: string; icon: typeof Fi
   { path: '/admin/get-a-quote', table: 'quote_requests', label: 'Get a Quote', icon: FileText },
   { path: '/admin/contact-us', table: 'contact_messages', label: 'Contact Us', icon: MessageSquare },
   { path: '/admin/calculator', table: 'calculator_submissions', label: 'Calculator', icon: Calculator },
+];
+
+const QR_PATH = '/admin/qr-code';
+const NAV_ITEMS: { path: string; label: string; icon: typeof FileText }[] = [
+  ...PAGES,
+  { path: QR_PATH, label: 'QR Code', icon: QrCode },
 ];
 
 const currentPath = () => window.location.pathname.replace(/\/+$/, '') || '/';
@@ -73,7 +80,7 @@ function Login() {
       <form className="ad-card ad-login-card" onSubmit={submit}>
         <img className="ad-brand-logo" src="/assets/enkay-logo.png" alt="ENKAY Renewables Energy" />
         <h1>Administrator Login</h1>
-        <p>ENKAY Renewable Energy — sign in to manage enquiries.</p>
+        <p>ENKAY Renewables Energy — sign in to manage enquiries.</p>
         <label>Username
           <span className="ad-field"><User size={16} aria-hidden="true" />
             <input required autoComplete="username" placeholder="Administrator" value={username} onChange={e => setUsername(e.target.value)} />
@@ -90,7 +97,7 @@ function Login() {
         {error && <p className="ad-err" role="alert">{error}</p>}
         <button className="ad-btn is-primary" disabled={busy}>{busy ? 'Signing in…' : 'Login'}</button>
       </form>
-      <p className="ad-login-foot">© {new Date().getFullYear()} ENKAY Renewable Energy · Admin access only</p>
+      <p className="ad-login-foot">© {new Date().getFullYear()} ENKAY Renewables Energy · Admin access only</p>
       </div>
     </div>
   );
@@ -404,6 +411,58 @@ function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, o
   );
 }
 
+// ── Contact Us QR code (download for print / marketing) ──────────────────
+function QrPanel() {
+  const [svg, setSvg] = useState('');
+  const [busy, setBusy] = useState<'' | 'png' | 'svg'>('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    logoToDataUri().then(d => setSvg(buildQrSvg(d))).catch(() => setError('Could not load the ENKAY logo for the QR code.'));
+  }, []);
+
+  const download = async (kind: 'png' | 'svg') => {
+    if (!svg) return;
+    setBusy(kind); setError('');
+    try {
+      if (kind === 'svg') saveBlob(new Blob([svg], { type: 'image/svg+xml' }), 'enkay-contact-us-qr.svg');
+      else saveBlob(await buildQrPng(svg), 'enkay-contact-us-qr.png');
+    } catch {
+      setError('Download failed. Please try again.');
+    } finally { setBusy(''); }
+  };
+
+  return (
+    <>
+      <div className="ad-head">
+        <div>
+          <h1>Contact Us QR Code</h1>
+          <p>Customers who scan this with their phone camera open the public Contact Us page.</p>
+        </div>
+      </div>
+      <div className="ad-card ad-qr">
+        <div className="ad-qr-preview">
+          {svg ? <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} alt="ENKAY Contact Us QR code" /> : <p className="ad-loading">{error || 'Preparing QR code…'}</p>}
+        </div>
+        <div className="ad-qr-side">
+          <h2>Download</h2>
+          <p>Links to <a href={CONTACT_URL} target="_blank" rel="noreferrer">{CONTACT_URL}</a></p>
+          <ul>
+            <li><strong>PNG</strong> – 3000 × 3420 px at 300 DPI (about 25 cm wide). Ready for brochures, banners and visiting cards.</li>
+            <li><strong>SVG</strong> – vector file that scales to any size without losing sharpness. Best for large banners and printers.</li>
+          </ul>
+          <div className="ad-qr-actions">
+            <button className="ad-btn is-primary" disabled={!svg || !!busy} onClick={() => download('png')}><Download size={16} aria-hidden="true" />{busy === 'png' ? 'Preparing…' : 'Download PNG'}</button>
+            <button className="ad-btn is-primary" disabled={!svg || !!busy} onClick={() => download('svg')}><Download size={16} aria-hidden="true" />{busy === 'svg' ? 'Preparing…' : 'Download SVG'}</button>
+          </div>
+          {error && svg && <p className="ad-qr-error" role="alert">{error}</p>}
+          <p className="ad-qr-tip">Tip: keep at least 2 cm printed size and print on a light background.</p>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Page shell: auth gate + admin routes ─────────────────────────────────
 export default function AdminPage() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -421,7 +480,10 @@ export default function AdminPage() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     const onPop = () => setPath(currentPath());
     window.addEventListener('popstate', onPop);
-    return () => { sub.subscription.unsubscribe(); window.removeEventListener('popstate', onPop); };
+    // Back/forward cache can restore a stale admin DOM after logout – force a fresh auth check.
+    const onShow = (e: PageTransitionEvent) => { if (e.persisted) window.location.reload(); };
+    window.addEventListener('pageshow', onShow);
+    return () => { sub.subscription.unsubscribe(); window.removeEventListener('popstate', onPop); window.removeEventListener('pageshow', onShow); };
   }, []);
 
   // A row in public.admins is visible only to that admin (RLS), so finding one confirms access.
@@ -432,18 +494,19 @@ export default function AdminPage() {
   }, [session]);
 
   const page = PAGES.find(p => p.path === path);
+  const isQr = path === QR_PATH;
   const authed = !!session && isAdmin === true;
 
   // Logged out → login page; logged in on /admin (or unknown sub-path) → first list page.
   useEffect(() => {
     if (session === undefined || (session && isAdmin === null)) return;
     if (!authed && path !== LOGIN_PATH) go(LOGIN_PATH, true);
-    else if (authed && !page) go(PAGES[0].path, true);
-  }, [session, isAdmin, authed, path, page, go]);
+    else if (authed && !page && !isQr) go(PAGES[0].path, true);
+  }, [session, isAdmin, authed, path, page, isQr, go]);
 
   useEffect(() => {
-    document.title = `${authed && page ? `${page.label} List` : 'Administrator Login'} · ENKAY Admin`;
-  }, [authed, page]);
+    document.title = `${authed && page ? `${page.label} List` : authed && isQr ? 'Contact Us QR Code' : 'Administrator Login'} · ENKAY Admin`;
+  }, [authed, page, isQr]);
 
   if (session === undefined || (session && isAdmin === null)) return <div className="ad-login"><p className="ad-loading">Loading…</p></div>;
   if (!session) return <Login />;
@@ -459,14 +522,14 @@ export default function AdminPage() {
       </div>
     );
   }
-  if (!page) return <div className="ad-login"><p className="ad-loading">Loading…</p></div>;
+  if (!page && !isQr) return <div className="ad-login"><p className="ad-loading">Loading…</p></div>;
 
   return (
     <div className="ad">
       <header className="ad-top">
         <div className="ad-brand"><span className="ad-logo is-sm"><Sun size={18} aria-hidden="true" /></span>ENKAY Admin</div>
         <nav className="ad-nav" aria-label="Admin pages">
-          {PAGES.map(({ path: p, label, icon: Icon }) => (
+          {NAV_ITEMS.map(({ path: p, label, icon: Icon }) => (
             <a key={p} href={p} className={p === path ? 'is-on' : ''} aria-current={p === path ? 'page' : undefined}
               onClick={e => { e.preventDefault(); go(p); }}>
               <Icon size={16} aria-hidden="true" />{label}
@@ -475,14 +538,14 @@ export default function AdminPage() {
         </nav>
         <div className="ad-user">
           <span><User size={15} aria-hidden="true" />{(session.user.user_metadata?.username as string) || 'Administrator'}</span>
-          <button className="ad-btn" onClick={async () => { await supabase.auth.signOut(); go(LOGIN_PATH, true); }}>
+          <button className="ad-btn" onClick={async () => { await supabase.auth.signOut(); window.location.replace('/'); }}>
             <LogOut size={16} aria-hidden="true" />Logout
           </button>
         </div>
       </header>
 
       <main className="ad-main">
-        <ListPage key={page.table} table={page.table} label={page.label} />
+        {page ? <ListPage key={page.table} table={page.table} label={page.label} /> : <QrPanel />}
       </main>
     </div>
   );
