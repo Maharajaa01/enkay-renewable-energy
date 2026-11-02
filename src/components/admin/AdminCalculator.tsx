@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { Calculator, Link2, Search, X } from 'lucide-react';
-import { EMPTY_INPUTS, READING_LABELS, calculate, inr, oneDecimal, validate } from '../calculator/calculatorLogic';
-import type { CalcErrors, CalcInputs, ProjectType } from '../calculator/calculatorLogic';
+import { Calculator, Link2, Search, X, Zap } from 'lucide-react';
+import { EMPTY_INPUTS, READING_LABELS, calculate, parseNum, recommendedCapacityKw, calculatedCapacityKw, totalAnnualUnits } from '../calculator/calculatorLogic';
+import type { CalcInputs, ProjectType } from '../calculator/calculatorLogic';
 import { listEnquiries, saveAdminCalculation } from '../../lib/enquiries';
 import type { CalcCustomer, ContactMessage, QuoteRequest } from '../../lib/enquiries';
 
@@ -39,8 +39,6 @@ const validateCustomer = (c: CalcCustomer): CustomerErrors => ({
   ...(c.phone.replace(/\D/g, '').length >= 6 ? {} : { phone: 'Enter a valid phone number.' }),
 });
 
-const INPUT_ORDER = ['bill', 'location', 'capacity', 'tariff', 'unitsPerKwp', 'costPerKwp'] as const;
-
 function Field({ id, label, error, children, wide }: { id: string; label: string; error?: string; children: ReactNode; wide?: boolean }) {
   return (
     <label className={`ad-f${wide ? ' is-wide' : ''}`} htmlFor={id}>
@@ -50,6 +48,27 @@ function Field({ id, label, error, children, wide }: { id: string; label: string
     </label>
   );
 }
+
+/** Client's formula: Daily ÷ (4.5 × 0.8), rounded UP to next 0.5 kW. */
+interface SolarCalcResult {
+  totalUnits: number;
+  dailyUnits: number;
+  calculatedKw: number;
+  recommendedKw: number;
+}
+
+function calcSolarCapacity(readings: string[]): SolarCalcResult | null {
+  const nums = readings.map(r => parseNum(r));
+  if (nums.some(n => isNaN(n) || n < 0)) return null;
+  const totalUnits = totalAnnualUnits(nums);
+  const dailyUnits = totalUnits / 365;
+  const calculatedKw = calculatedCapacityKw(totalUnits);
+  const recommendedKw = recommendedCapacityKw(calculatedKw);
+  return { totalUnits, dailyUnits, calculatedKw, recommendedKw };
+}
+
+const fmt1 = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+const fmt2 = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 interface Props {
   prefill?: CalcPrefill;
@@ -67,11 +86,15 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
   const [query, setQuery] = useState('');
   const closeRef = useRef<HTMLButtonElement>(null);
 
+  // Solar capacity result — only set when user clicks "Calculate Solar Capacity"
+  const [calcResult, setCalcResult] = useState<SolarCalcResult | null>(null);
+  const [calcError, setCalcError] = useState('');
+  // Track readings snapshot at time of calculation to detect stale results
+  const [calcReadings, setCalcReadings] = useState<string[]>([]);
+  const isStale = calcResult !== null && inputs.readings.some((r, i) => r !== calcReadings[i]);
+
   const linked = customer.quoteRequestId !== null || customer.contactMessageId !== null;
-  const errors: CalcErrors = tried ? validate(inputs) : {};
   const custErrors: CustomerErrors = tried ? validateCustomer(customer) : {};
-  // Live estimate as soon as the inputs are valid, so the admin can talk the customer through it.
-  const result = useMemo(() => (Object.keys(validate(inputs)).length ? null : calculate(inputs)), [inputs]);
 
   // Escape closes, and the page behind doesn't scroll while the dialog is open.
   useEffect(() => {
@@ -94,20 +117,19 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
       .catch(err => console.error('Could not load enquiries', err));
   }, [prefill?.customer]);
 
-  const matches = useMemo(() => {
+  const matches = (() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     const digits = q.replace(/\D/g, '');
     return leads.filter(l => l.name.toLowerCase().includes(q) || l.email.toLowerCase().includes(q)
       || (digits.length >= 3 && l.phone.replace(/\D/g, '').includes(digits))).slice(0, 6);
-  }, [leads, query]);
+  })();
 
   const set = <K extends keyof CalcInputs>(key: K, value: CalcInputs[K]) => setInputs(p => ({ ...p, [key]: value }));
   const setCust = (key: 'name' | 'phone' | 'email', value: string) => setCustomer(c => ({ ...c, [key]: value }));
 
   const pick = (l: Lead) => {
     setCustomer(l.prefill.customer!);
-    // Only fill requirement fields the admin hasn't typed yet.
     setInputs(p => {
       const next = { ...p };
       for (const [k, v] of Object.entries(l.prefill.inputs ?? {}) as [keyof CalcInputs, string][]) {
@@ -118,19 +140,58 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
     setQuery('');
   };
 
+  const handleCalculate = () => {
+    setCalcError('');
+    // Validate: all 6 readings required and must be valid non-negative numbers
+    const hasEmpty = inputs.readings.some(r => r.trim() === '');
+    if (hasEmpty) {
+      setCalcResult(null);
+      setCalcError('Please enter all six meter readings before calculating.');
+      return;
+    }
+    const hasInvalid = inputs.readings.some(r => {
+      const v = parseNum(r);
+      return isNaN(v) || v < 0;
+    });
+    if (hasInvalid) {
+      setCalcResult(null);
+      setCalcError('Please enter valid non-negative numbers for all six readings.');
+      return;
+    }
+    const result = calcSolarCapacity(inputs.readings);
+    if (!result) {
+      setCalcResult(null);
+      setCalcError('Could not calculate. Please check your readings.');
+      return;
+    }
+    setCalcResult(result);
+    setCalcReadings([...inputs.readings]);
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setTried(true);
     setSaveError('');
     const ce = validateCustomer(customer);
-    const ie = validate(inputs);
-    const firstId = ce.name ? 'ac-name' : ce.phone ? 'ac-phone'
-      : ie.readings ? `ac-reading-${ie.readings.findIndex(Boolean)}`
-      : INPUT_ORDER.filter(k => k in ie).map(k => `ac-${k}`)[0];
-    if (firstId) { document.getElementById(firstId)?.focus(); return; }
+    // For save: validate customer + at least readings filled
+    const readingsEmpty = inputs.readings.every(r => r.trim() === '');
+    const readingsInvalid = inputs.readings.some(r => r.trim() !== '' && (isNaN(parseNum(r)) || parseNum(r) < 0));
+    if (ce.name || ce.phone || readingsEmpty || readingsInvalid) {
+      if (ce.name) { document.getElementById('ac-name')?.focus(); return; }
+      if (ce.phone) { document.getElementById('ac-phone')?.focus(); return; }
+      if (readingsEmpty || readingsInvalid) { document.getElementById('ac-reading-0')?.focus(); return; }
+    }
     setBusy(true);
     try {
-      await saveAdminCalculation(inputs, calculate(inputs), customer);
+      // Build a minimal CalcInputs for save — use calculated capacity from new formula
+      const solarResult = calcSolarCapacity(inputs.readings);
+      const saveInputs: CalcInputs = {
+        ...EMPTY_INPUTS,
+        ...inputs,
+        // Store recommended capacity so it propagates correctly
+        capacity: solarResult ? String(solarResult.recommendedKw) : inputs.capacity,
+      };
+      await saveAdminCalculation(saveInputs, calculate(saveInputs), customer);
       onSaved();
       onClose();
     } catch (ex) {
@@ -150,6 +211,7 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
         </header>
 
         <div className="ad-modal-body">
+          {/* ── LEFT: Customer + Readings ── */}
           <div className="ad-calc-form">
             {/* ── Customer ── */}
             <section className="ad-fs">
@@ -206,67 +268,100 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
                 ))}
               </div>
               <div className="ad-grid">
-                <Field id="ac-location" label="Location *" error={errors.location}>
-                  <input className="ad-in" {...aria('ac-location', errors.location)} value={inputs.location} onChange={e => set('location', e.target.value)} />
+                <Field id="ac-location" label="Location" error={tried && !inputs.location.trim() ? 'Enter location.' : undefined}>
+                  <input className="ad-in" id="ac-location" value={inputs.location} onChange={e => set('location', e.target.value)} />
                 </Field>
-                <Field id="ac-bill" label="Monthly bill (₹) *" error={errors.bill}>
-                  <input className="ad-in" {...aria('ac-bill', errors.bill)} inputMode="decimal" value={inputs.bill} onChange={e => set('bill', e.target.value)} />
+                <Field id="ac-bill" label="Monthly bill (₹)">
+                  <input className="ad-in" id="ac-bill" inputMode="decimal" value={inputs.bill} onChange={e => set('bill', e.target.value)} />
                 </Field>
               </div>
-              <p className="ad-sub">Bi-monthly meter readings (units) *</p>
+            </section>
+
+            {/* ── Meter Readings ── */}
+            <section className="ad-fs">
+              <h3>Bi-monthly meter readings (units)</h3>
               <div className="ad-grid is-3">
-                {READING_LABELS.map((label, idx) => (
-                  <Field key={label} id={`ac-reading-${idx}`} label={`Reading ${idx + 1}`} error={errors.readings?.[idx]}>
-                    <input className="ad-in" {...aria(`ac-reading-${idx}`, errors.readings?.[idx])} inputMode="decimal" placeholder="Units"
-                      value={inputs.readings[idx]} onChange={e => set('readings', inputs.readings.map((r, j) => (j === idx ? e.target.value : r)))} />
+                {READING_LABELS.map((_, idx) => (
+                  <Field key={idx} id={`ac-reading-${idx}`} label={`Reading ${idx + 1}`}>
+                    <input
+                      className="ad-in"
+                      id={`ac-reading-${idx}`}
+                      inputMode="decimal"
+                      placeholder="Units"
+                      value={inputs.readings[idx]}
+                      onChange={e => set('readings', inputs.readings.map((r, j) => (j === idx ? e.target.value : r)))}
+                    />
                   </Field>
                 ))}
               </div>
-            </section>
-
-            {/* ── Assumptions ── */}
-            <section className="ad-fs">
-              <h3>System &amp; assumptions</h3>
-              <div className="ad-grid">
-                <Field id="ac-capacity" label="Capacity (kWp) — blank = recommended" error={errors.capacity} wide>
-                  <input className="ad-in" {...aria('ac-capacity', errors.capacity)} inputMode="decimal" value={inputs.capacity} onChange={e => set('capacity', e.target.value)} />
-                </Field>
-                <Field id="ac-tariff" label="Tariff (₹ / unit)" error={errors.tariff}>
-                  <input className="ad-in" {...aria('ac-tariff', errors.tariff)} inputMode="decimal" value={inputs.tariff} onChange={e => set('tariff', e.target.value)} />
-                </Field>
-                <Field id="ac-unitsPerKwp" label="Units / kWp / month" error={errors.unitsPerKwp}>
-                  <input className="ad-in" {...aria('ac-unitsPerKwp', errors.unitsPerKwp)} inputMode="decimal" value={inputs.unitsPerKwp} onChange={e => set('unitsPerKwp', e.target.value)} />
-                </Field>
-                <Field id="ac-costPerKwp" label="Cost per kWp (₹)" error={errors.costPerKwp} wide>
-                  <input className="ad-in" {...aria('ac-costPerKwp', errors.costPerKwp)} inputMode="decimal" value={inputs.costPerKwp} onChange={e => set('costPerKwp', e.target.value)} />
-                </Field>
-              </div>
+              <p className="ad-hint" style={{ fontSize: '12px', marginTop: '2px' }}>
+                Six bi-monthly readings covering 12 months (Reading 1: months 1–2, Reading 6: months 11–12).
+              </p>
             </section>
           </div>
 
-          {/* ── Live estimate ── */}
-          <aside className="ad-res" aria-live="polite">
-            <h3>Estimate</h3>
-            {result ? (
-              <>
-                <div className="ad-res-hero">
-                  <span>Monthly saving</span>
-                  <b>{result.monthlySaving === null ? '—' : inr(result.monthlySaving)}</b>
-                  {result.monthlySaving === null && <small>Enter tariff and units / kWp / month to see savings.</small>}
+          {/* ── RIGHT: Calculate Button + Results ── */}
+          <aside className="ad-solar-panel" aria-live="polite">
+            <button
+              type="button"
+              className="ad-calc-btn"
+              onClick={handleCalculate}
+            >
+              <Zap size={18} aria-hidden="true" />
+              Calculate Solar Capacity
+            </button>
+
+            {calcError && (
+              <p className="ad-calc-val-err" role="alert">{calcError}</p>
+            )}
+
+            {!calcResult && !calcError && (
+              <div className="ad-solar-hint">
+                <p>Enter all six meter readings and click <strong>Calculate Solar Capacity</strong> to see your recommended solar system size.</p>
+              </div>
+            )}
+
+            {calcResult && (
+              <div className={`ad-solar-result${isStale ? ' is-stale' : ''}`}>
+                {isStale && (
+                  <p className="ad-solar-stale-msg">⚠ Readings changed — click Calculate to update.</p>
+                )}
+
+                {/* Hero: Recommended Capacity */}
+                <div className="ad-solar-hero">
+                  <span className="ad-solar-hero-label">Recommended Solar Capacity</span>
+                  <div className="ad-solar-hero-value">
+                    {fmt1(calcResult.recommendedKw)}
+                    <span className="ad-solar-hero-unit">kW</span>
+                  </div>
                 </div>
-                <dl>
-                  <div><dt>System size</dt><dd>{oneDecimal(result.capacityKwp)} kWp{result.capacityProvided ? '' : ' (recommended)'}</dd></div>
-                  <div><dt>Recommended size</dt><dd>{oneDecimal(result.recommendedKw)} kWp</dd></div>
-                  <div><dt>Annual usage</dt><dd>{Math.round(result.totalUnits).toLocaleString('en-IN')} kWh</dd></div>
-                  <div><dt>Daily usage</dt><dd>{oneDecimal(result.dailyUnits)} kWh</dd></div>
-                  <div><dt>Annual saving</dt><dd>{result.annualSaving === null ? '—' : inr(result.annualSaving)}</dd></div>
-                  <div><dt>Bill with solar</dt><dd>{result.billWithSolar === null ? '—' : `${inr(result.billWithSolar)} / month`}</dd></div>
-                  <div><dt>Payback</dt><dd>{result.paybackYears === null ? '—' : `${oneDecimal(result.paybackYears)} years`}</dd></div>
-                </dl>
-                {result.capped && <p className="ad-hint">Generation exceeds usage — saving is capped at the current bill.</p>}
-              </>
-            ) : (
-              <p className="ad-hint">Fill in the location, monthly bill and at least one meter reading to see the estimate.</p>
+
+                {/* Breakdown */}
+                <div className="ad-solar-breakdown">
+                  <h4 className="ad-solar-breakdown-title">Calculation Breakdown</h4>
+                  <dl className="ad-solar-dl">
+                    <div>
+                      <dt>Total Annual Consumption</dt>
+                      <dd>{Math.round(calcResult.totalUnits).toLocaleString('en-IN')} Units</dd>
+                    </div>
+                    <div>
+                      <dt>Average Daily Consumption</dt>
+                      <dd>{fmt1(calcResult.dailyUnits)} Units / day</dd>
+                    </div>
+                    <div>
+                      <dt>Calculated Solar Capacity</dt>
+                      <dd>{fmt2(calcResult.calculatedKw)} kW</dd>
+                    </div>
+                    <div className="is-highlight">
+                      <dt>Recommended Solar Capacity</dt>
+                      <dd><strong>{fmt1(calcResult.recommendedKw)} kW</strong></dd>
+                    </div>
+                  </dl>
+                  <p className="ad-solar-formula-note">
+                    Formula: Daily ÷ (4.5 × 0.8), rounded up to next 0.5 kW
+                  </p>
+                </div>
+              </div>
             )}
           </aside>
         </div>

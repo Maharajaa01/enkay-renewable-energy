@@ -73,7 +73,7 @@ export default function AboutPage({ onNavigate, quoteOpen, onQuoteOpen, onQuoteC
           <Reveal className="hp-eyebrow" from="right" delay={0.1}>Who We Are</Reveal>
           <Reveal as="h2" id="ab-who-title" from="right" delay={0.2}>Your trusted solar partner in Tamil Nadu</Reveal>
           <Reveal from="right" delay={0.3}><blockquote className="ab-quote">
-            ENKAY Renewable Energy is a trusted and authorized dealer for leading solar brands including Rayzon Solar,
+            ENKAY Renewables Energy is a trusted and authorized dealer for leading solar brands including Rayzon Solar,
             Waaree Energies Pvt. Ltd., VSole Energy, Adani Solar and Sungrow Energy. We are also associated with leading
             solar on-grid and off-grid inverter manufacturers in Tamil Nadu for residential, industrial and commercial
             solar power plant applications.
