@@ -3,14 +3,29 @@ import type { FormEvent, ReactNode } from 'react';
 import { Calculator, Link2, Search, X, Zap } from 'lucide-react';
 import { EMPTY_INPUTS, READING_LABELS, calculate, parseNum, recommendedCapacityKw, calculatedCapacityKw, totalAnnualUnits } from '../calculator/calculatorLogic';
 import type { CalcInputs, ProjectType } from '../calculator/calculatorLogic';
-import { listEnquiries, saveAdminCalculation } from '../../lib/enquiries';
-import type { CalcCustomer, ContactMessage, QuoteRequest } from '../../lib/enquiries';
+import { listEnquiries, saveAdminCalculation, updateAdminCalculation } from '../../lib/enquiries';
+import { BILL_COUNT, EMPTY_BILLS, initialFixedCharges, calculateFinancials, formatPayback, formatRupees, moneyValue, sanitizeMoney } from './solarFinancials';
+import type { CalcCustomer, CalculatorSubmission, ContactMessage, QuoteRequest } from '../../lib/enquiries';
 
 /** What the calculator opens with: the customer (and their enquiry) plus any requirement already known. */
 export interface CalcPrefill {
   customer?: CalcCustomer;
   inputs?: Partial<CalcInputs>;
+  /** Previously saved financials; a missing fixed_charges falls back to the ₹1,000 default. */
+  financials?: { bills?: number[]; fixed_charges?: number | null; installation_cost?: number | null };
 }
+
+/** Opens the dialog in edit mode, pre-filled from a saved row. */
+export const prefillFromSaved = (r: CalculatorSubmission): CalcPrefill => ({
+  customer: { name: r.customer_name ?? '', phone: r.customer_phone ?? '', email: r.customer_email ?? '', quoteRequestId: r.quote_request_id, contactMessageId: r.contact_message_id },
+  inputs: {
+    projectType: r.project_type,
+    location: r.location,
+    bill: r.monthly_bill ? String(r.monthly_bill) : '',
+    readings: Array.from({ length: 6 }, (_, i) => (r.readings?.[i] === null || r.readings?.[i] === undefined ? '' : String(r.readings[i]))),
+  },
+  financials: { bills: r.eb_bills ?? undefined, fixed_charges: r.monthly_fixed_charges, installation_cost: r.installation_cost },
+});
 
 const NO_CUSTOMER: CalcCustomer = { name: '', phone: '', email: '', quoteRequestId: null, contactMessageId: null };
 
@@ -72,11 +87,13 @@ const fmt2 = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 0
 
 interface Props {
   prefill?: CalcPrefill;
+  /** Set to edit this saved calculation instead of creating a new one. */
+  editId?: number;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
+export default function AdminCalculator({ prefill, editId, onClose, onSaved }: Props) {
   const [inputs, setInputs] = useState<CalcInputs>({ ...EMPTY_INPUTS, ...prefill?.inputs });
   const [customer, setCustomer] = useState<CalcCustomer>(prefill?.customer ?? NO_CUSTOMER);
   const [tried, setTried] = useState(false);
@@ -87,11 +104,18 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
   // Solar capacity result — only set when user clicks "Calculate Solar Capacity"
-  const [calcResult, setCalcResult] = useState<SolarCalcResult | null>(null);
+  const [calcResult, setCalcResult] = useState<SolarCalcResult | null>(() => (editId !== undefined ? calcSolarCapacity(inputs.readings) : null));
   const [calcError, setCalcError] = useState('');
   // Track readings snapshot at time of calculation to detect stale results
-  const [calcReadings, setCalcReadings] = useState<string[]>([]);
+  const [calcReadings, setCalcReadings] = useState<string[]>(() => (editId !== undefined ? [...inputs.readings] : []));
   const isStale = calcResult !== null && inputs.readings.some((r, i) => r !== calcReadings[i]);
+
+  // Financial calculation (EB bills) — live, independent of the kWp calculation above.
+  const [bills, setBills] = useState<string[]>(() =>
+    prefill?.financials?.bills?.length ? Array.from({ length: BILL_COUNT }, (_, i) => { const b = prefill.financials!.bills![i]; return b ? String(b) : ''; }) : EMPTY_BILLS);
+  const [fixedCharges, setFixedCharges] = useState(() => initialFixedCharges(prefill?.financials?.fixed_charges));
+  const [installationCost, setInstallationCost] = useState(() => (prefill?.financials?.installation_cost ? String(prefill.financials.installation_cost) : ''));
+  const fin = calculateFinancials({ bills, fixedCharges, installationCost });
 
   const linked = customer.quoteRequestId !== null || customer.contactMessageId !== null;
   const custErrors: CustomerErrors = tried ? validateCustomer(customer) : {};
@@ -191,7 +215,9 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
         // Store recommended capacity so it propagates correctly
         capacity: solarResult ? String(solarResult.recommendedKw) : inputs.capacity,
       };
-      await saveAdminCalculation(saveInputs, calculate(saveInputs), customer);
+      const solar = { readings: inputs.readings, bills, fixedCharges, installationCost };
+      if (editId !== undefined) await updateAdminCalculation(editId, saveInputs, calculate(saveInputs), customer, solar);
+      else await saveAdminCalculation(saveInputs, calculate(saveInputs), customer, solar);
       onSaved();
       onClose();
     } catch (ex) {
@@ -206,7 +232,7 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
     <div className="ad-modal-bg" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <form className="ad-modal" role="dialog" aria-modal="true" aria-labelledby="ac-title" onSubmit={submit} noValidate>
         <header className="ad-modal-hd">
-          <h2 id="ac-title"><Calculator size={20} aria-hidden="true" />Solar calculation</h2>
+          <h2 id="ac-title"><Calculator size={20} aria-hidden="true" />{editId !== undefined ? 'Edit calculation' : 'Solar calculation'}</h2>
           <button ref={closeRef} type="button" className="ad-icon" onClick={onClose} aria-label="Close"><X size={20} aria-hidden="true" /></button>
         </header>
 
@@ -298,19 +324,36 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
                 Six bi-monthly readings covering 12 months (Reading 1: months 1–2, Reading 6: months 11–12).
               </p>
             </section>
+
+            {/* ── EB Bill Amounts ── */}
+            <section className="ad-fs">
+              <h3>Bi-monthly EB bill amounts (₹)</h3>
+              <p className="ad-hint" style={{ fontSize: '12px', marginTop: '-6px' }}>Enter the actual EB bill amount for each two-month billing period.</p>
+              <div className="ad-grid">
+                {Array.from({ length: BILL_COUNT }, (_, idx) => (
+                  <Field key={idx} id={`ac-eb-bill-${idx}`} label={`Bill ${idx + 1} (₹)`}>
+                    <input
+                      className="ad-in"
+                      id={`ac-eb-bill-${idx}`}
+                      inputMode="decimal"
+                      placeholder="Amount"
+                      value={bills[idx]}
+                      onChange={e => setBills(bs => bs.map((b, j) => (j === idx ? sanitizeMoney(e.target.value) : b)))}
+                    />
+                  </Field>
+                ))}
+                <Field id="ac-fixed" label="Monthly Fixed Charges (₹)">
+                  <input className="ad-in" id="ac-fixed" inputMode="decimal" value={fixedCharges} onChange={e => setFixedCharges(sanitizeMoney(e.target.value))} />
+                </Field>
+                <Field id="ac-install" label="Solar Installation Cost (₹)">
+                  <input className="ad-in" id="ac-install" inputMode="decimal" value={installationCost} onChange={e => setInstallationCost(sanitizeMoney(e.target.value))} />
+                </Field>
+              </div>
+            </section>
           </div>
 
           {/* ── RIGHT: Calculate Button + Results ── */}
           <aside className="ad-solar-panel" aria-live="polite">
-            <button
-              type="button"
-              className="ad-calc-btn"
-              onClick={handleCalculate}
-            >
-              <Zap size={18} aria-hidden="true" />
-              Calculate Solar Capacity
-            </button>
-
             {calcError && (
               <p className="ad-calc-val-err" role="alert">{calcError}</p>
             )}
@@ -363,13 +406,31 @@ export default function AdminCalculator({ prefill, onClose, onSaved }: Props) {
                 </div>
               </div>
             )}
+
+            {/* Financial Calculation Breakdown — updates live from the EB bill inputs */}
+            <div className="ad-solar-breakdown">
+              <h4 className="ad-solar-breakdown-title">Financial Calculation Breakdown</h4>
+              <dl className="ad-solar-dl">
+                <div><dt>Annual EB Bill</dt><dd>{formatRupees(fin.annualBill)}</dd></div>
+                <div><dt>Monthly Average Bill</dt><dd>{formatRupees(fin.monthlyAverage)}</dd></div>
+                <div><dt>Monthly Savings</dt><dd>{formatRupees(fin.monthlySavings)}</dd></div>
+                <div><dt>Annual Savings</dt><dd>{formatRupees(fin.annualSavings)}</dd></div>
+                <div className="is-highlight">
+                  <dt>Investment Payback Period</dt>
+                  <dd><strong>{formatPayback(fin.paybackMonths)}</strong></dd>
+                </div>
+              </dl>
+            </div>
           </aside>
         </div>
 
         <footer className="ad-modal-ft">
           {saveError && <p className="ad-err" role="alert">{saveError}</p>}
           <button type="button" className="ad-btn" onClick={onClose}>Cancel</button>
-          <button className="ad-btn is-primary" disabled={busy}>{busy ? 'Saving…' : 'Save calculation'}</button>
+          <button type="button" className="ad-btn is-calc-btn" onClick={handleCalculate}>
+            <Zap size={16} aria-hidden="true" />Calculate Solar Capacity
+          </button>
+          <button className="ad-btn is-primary" disabled={busy}>{busy ? 'Saving…' : editId !== undefined ? 'Update calculation' : 'Save calculation'}</button>
         </footer>
       </form>
     </div>

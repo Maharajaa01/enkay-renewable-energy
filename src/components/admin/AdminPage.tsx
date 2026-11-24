@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
-  Calculator, ChevronDown, Download, Eye, EyeOff, FileText, Inbox, Lock, LogOut, Mail, MessageSquare, Phone, Plus, QrCode, RefreshCw, Search, Sun, Trash2, User,
+  Calculator, ChevronDown, Download, Eye, EyeOff, FileText, Inbox, Lock, LogOut, MapPin, Mail, MessageSquare, Phone, Pencil, Plus, QrCode, RefreshCw, Search, Sun, Trash2, User,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { ENQUIRY_STATUSES, deleteEnquiry, listCalculationsFor, listEnquiries, setEnquiryStatus } from '../../lib/enquiries';
+import { ENQUIRY_STATUSES, deleteEnquiries, deleteEnquiry, listCalculationsFor, listEnquiries, setEnquiryStatus } from '../../lib/enquiries';
 import type { CalculatorSubmission, ContactMessage, EnquiryStatus, EnquiryTable, QuoteRequest } from '../../lib/enquiries';
 import { CONTACT_URL, buildQrPng, buildQrSvg, logoToDataUri, saveBlob } from '../../lib/contactQr';
-import AdminCalculator, { prefillFromContact, prefillFromQuote } from './AdminCalculator';
+import AdminCalculator, { prefillFromContact, prefillFromQuote, prefillFromSaved } from './AdminCalculator';
 import type { CalcPrefill } from './AdminCalculator';
 import './admin.css';
 
@@ -43,6 +43,7 @@ const isQuote = (r: Row): r is QuoteRequest => 'details' in r;
 const isCalc = (r: Row): r is CalculatorSubmission => 'total_units' in r;
 
 const num = (n: number | null, unit = '') => (n === null ? null : `${n.toLocaleString('en-IN', { maximumFractionDigits: 1 })}${unit}`);
+const money2 = (n: number | null) => (n === null ? null : `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`);
 const rupees = (n: number | null) => (n === null ? null : `₹${Math.round(n).toLocaleString('en-IN')}`);
 
 // Website calculator runs are anonymous, so the location stands in for a name.
@@ -52,7 +53,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`;
 const TABLE_INFO: Record<EnquiryTable, { intro: string; cols: [string, string, string] }> = {
   quote_requests: { intro: 'Quote requests submitted from the website.', cols: ['Name', 'Contact', 'Project'] },
   contact_messages: { intro: 'Messages submitted through the Contact Us form.', cols: ['Name', 'Contact', 'Subject'] },
-  calculator_submissions: { intro: 'Website calculator estimates, and calculations saved for customers by the team.', cols: ['Customer / location', 'Contact & usage', 'System & savings'] },
+  calculator_submissions: { intro: 'Website calculator estimates, and calculations saved for customers by the team.', cols: ['Customer', 'Contact', 'System & savings'] },
 };
 
 // ── Login ────────────────────────────────────────────────────────────────
@@ -118,15 +119,19 @@ function Details({ row }: { row: Row }) {
         ['Location', row.location],
         ['Monthly bill', rupees(row.monthly_bill)],
         ['Annual units', num(row.total_units, ' kWh')],
+        ['Average daily units', num(row.average_daily_units, ' units / day')],
+        ['Calculated size', num(row.calculated_kw, ' kWp')],
         ['System size', `${num(row.capacity_kwp, ' kWp')} (${row.capacity_provided ? 'entered' : 'recommended'})`],
         ['Recommended size', num(row.recommended_kw, ' kWp')],
-        ['Tariff', row.tariff === null ? null : `₹${row.tariff} / unit`],
-        ['Units per kWp / month', num(row.units_per_kwp)],
-        ['Cost per kWp', rupees(row.cost_per_kwp)],
-        ['Monthly saving', rupees(row.monthly_saving)],
+        ['Annual EB bill', rupees(row.annual_eb_bill)],
+        ['Monthly average bill', money2(row.monthly_average_bill)],
+        ['Monthly fixed charges', rupees(row.monthly_fixed_charges)],
+        ['Solar installation cost', rupees(row.installation_cost)],
+        ['Monthly saving', money2(row.monthly_saving)],
         ['Annual saving', rupees(row.annual_saving)],
-        ['Payback', num(row.payback_years, ' years')],
+        ['Payback', row.payback_text ?? num(row.payback_years, ' years')],
         ['Bi-monthly readings', row.readings.map((u, i) => `R${i + 1}: ${u ?? '—'}`).join('  ·  ')],
+        ...(row.eb_bills ? [['Bi-monthly EB bills', row.eb_bills.map((b, i) => `B${i + 1}: ${rupees(b)}`).join('  ·  ')] as [string, string | null]] : []),
       ]
     : isQuote(row)
     ? [
@@ -141,7 +146,7 @@ function Details({ row }: { row: Row }) {
   return (
     <dl className="ad-details">
       {items.map(([k, v]) => (
-        <div key={k} className={k === 'Details' || k === 'Message' || k === 'Bi-monthly readings' ? 'is-wide' : ''}><dt>{k}</dt><dd>{v || '—'}</dd></div>
+        <div key={k} className={k === 'Details' || k === 'Message' || k === 'Bi-monthly readings' || k === 'Bi-monthly EB bills' ? 'is-wide' : ''}><dt>{k}</dt><dd>{v || '—'}</dd></div>
       ))}
     </dl>
   );
@@ -207,7 +212,16 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
   // Open calculator dialog (with its customer), and a counter that refreshes linked-calculation lists after a save.
   const [calc, setCalc] = useState<CalcPrefill | null>(null);
   const [calcVersion, setCalcVersion] = useState(0);
+  // Id of the saved calculation being edited (calculator list only).
+  const [editId, setEditId] = useState<number | undefined>();
   const isCalcPage = table === 'calculator_submissions';
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [toast, setToast] = useState('');
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 3500); return () => clearTimeout(t); }, [toast]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -217,7 +231,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
     finally { setLoading(false); }
   }, [table]);
 
-  useEffect(() => { setData([]); setOpen(null); setConfirmDel(null); load(); }, [load]);
+  useEffect(() => { setData([]); setOpen(null); setConfirmDel(null); setSelected(new Set()); setBulkConfirm(false); load(); }, [load]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -225,6 +239,22 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
       (statusFilter === 'all' || r.status === statusFilter) &&
       (!q || Object.values(r).some(v => typeof v === 'string' && v.toLowerCase().includes(q))));
   }, [data, query, statusFilter]);
+
+  // Pagination (calculator list only). Clamping covers deleting the last row of the last page.
+  useEffect(() => { setPage(1); }, [query, statusFilter, pageSize]);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visibleRows = isCalcPage ? rows.slice(pageStart, pageStart + pageSize) : rows;
+
+  const selectedInView = visibleRows.filter(r => selected.has(r.id)).length;
+  const allSelected = visibleRows.length > 0 && selectedInView === visibleRows.length;
+  const toggleAll = () => setSelected(prev => {
+    const n = new Set(prev);
+    visibleRows.forEach(r => (allSelected ? n.delete(r.id) : n.add(r.id)));
+    return n;
+  });
+  const toggleOne = (id: number) => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const counts = ENQUIRY_STATUSES.map(s => [s, data.filter(r => r.status === s).length] as const);
 
@@ -244,6 +274,26 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
     catch (ex) { setError((ex as Error).message); }
   };
 
+  // Only ids that still exist in the list count, so a stale selection can't inflate the number.
+  const selectedIds = isCalcPage ? data.filter(r => selected.has(r.id)).map(r => r.id) : [];
+  useEffect(() => { if (!selectedIds.length) setBulkConfirm(false); }, [selectedIds.length]);
+
+  const bulkDelete = async () => {
+    const ids = selectedIds;
+    setBulkBusy(true);
+    setError('');
+    try {
+      const removed = new Set(await deleteEnquiries(table, ids));
+      setData(d => d.filter(r => !removed.has(r.id)));
+      setSelected(new Set());
+      setOpen(null);
+      setBulkConfirm(false);
+      if (removed.size === ids.length) setToast(`${removed.size} calculation${removed.size === 1 ? '' : 's'} deleted.`);
+      else setError(`Only ${removed.size} of ${ids.length} could be deleted. Please sign in again and retry.`);
+    } catch (ex) { setError((ex as Error).message); }
+    finally { setBulkBusy(false); }
+  };
+
   const exportCsv = () => {
     const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -261,6 +311,19 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
           <p>{TABLE_INFO[table].intro}</p>
         </div>
         <div className="ad-counts">
+          {selectedIds.length > 0 && (
+            bulkConfirm ? (
+              <span className="ad-confirm ad-bulk-confirm" role="alertdialog" aria-label="Confirm delete">
+                Delete {selectedIds.length} selected calculation{selectedIds.length === 1 ? '' : 's'}?
+                <button className="ad-btn is-danger is-xs" onClick={bulkDelete} disabled={bulkBusy}>{bulkBusy ? 'Deleting…' : 'Yes'}</button>
+                <button className="ad-btn is-xs" onClick={() => setBulkConfirm(false)} disabled={bulkBusy}>No</button>
+              </span>
+            ) : (
+              <button className="ad-btn is-danger ad-bulk-del" onClick={() => setBulkConfirm(true)} aria-label={`Delete ${selectedIds.length} selected`}>
+                <Trash2 size={16} aria-hidden="true" />Delete ({selectedIds.length})
+              </button>
+            )
+          )}
           <span><b>{data.length}</b>Total</span>
           {counts.map(([s, n]) => <span key={s} className={`is-${s}`}><b>{n}</b>{cap(s)}</span>)}
         </div>
@@ -269,7 +332,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
       <section className="ad-card ad-panel">
         <div className="ad-toolbar">
           {isCalcPage && (
-            <button className="ad-btn is-primary ad-new" onClick={() => setCalc({})}><Plus size={16} aria-hidden="true" />New calculation</button>
+            <button className="ad-btn is-primary ad-new" onClick={() => { setEditId(undefined); setCalc({}); }}><Plus size={16} aria-hidden="true" />New calculation</button>
           )}
           <label className="ad-search"><Search size={16} aria-hidden="true" />
             <input type="search" placeholder={isCalcPage ? 'Search customer, phone, location…' : 'Search name, email, phone…'} value={query} onChange={e => setQuery(e.target.value)} aria-label="Search" />
@@ -289,21 +352,42 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
         {!loading && !rows.length ? (
           <div className="ad-empty"><Inbox size={36} aria-hidden="true" /><p>{data.length ? 'No entries match your filters.' : 'No submissions yet.'}</p></div>
         ) : (
-          <div className="ad-table-wrap">
+          <div className={`ad-table-wrap${isCalcPage ? " ad-is-calc" : ""}`}>
             <table className="ad-table">
               <thead>
-                <tr>
-                  <th>Date</th>
-                  {TABLE_INFO[table].cols.map(c => <th key={c}>{c}</th>)}
-                  <th>Status</th>
-                  <th aria-label="Actions" />
-                </tr>
+                {isCalcPage ? (
+                  <tr>
+                    <th className="ad-col-sel">
+                      <input type="checkbox" className="ad-check" aria-label="Select all"
+                        checked={allSelected} ref={el => { if (el) el.indeterminate = selectedInView > 0 && !allSelected; }}
+                        onChange={toggleAll} />
+                    </th>
+                    <th className="ad-col-sno">S.No</th>
+                    <th>Customer</th>
+                    <th>Location</th>
+                    <th>Contact</th>
+                    <th>System &amp; savings</th>
+                    <th className="ad-nowrap">Date</th>
+                    <th className="ad-nowrap">Status</th>
+                    <th className="ad-nowrap ad-th-action">Action</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th>Date</th>
+                    {TABLE_INFO[table].cols.map(c => <th key={c}>{c}</th>)}
+                    <th>Status</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                )}
               </thead>
               <tbody>
-                {rows.map(r => (
+                {visibleRows.map((r, idx) => (
                   <RowView
                     key={r.id}
                     row={r}
+                    index={pageStart + idx + 1}
+                    selected={selected.has(r.id)}
+                    onSelect={() => toggleOne(r.id)}
                     expanded={open === r.id}
                     confirming={confirmDel === r.id}
                     onToggle={() => setOpen(o => (o === r.id ? null : r.id))}
@@ -311,6 +395,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
                     onAskDelete={() => setConfirmDel(r.id)}
                     onCancelDelete={() => setConfirmDel(null)}
                     onDelete={() => remove(r.id)}
+                    onEdit={isCalcPage ? () => { setEditId(r.id); setCalc(prefillFromSaved(r as CalculatorSubmission)); } : undefined}
                     onCalculate={isCalcPage ? undefined : () => setCalc(isQuote(r) ? prefillFromQuote(r) : prefillFromContact(r as ContactMessage))}
                     calcVersion={calcVersion}
                   />
@@ -320,13 +405,36 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
             {loading && <p className="ad-loading">Loading…</p>}
           </div>
         )}
+
+        {isCalcPage && (
+          <div className="ad-pager">
+            <div className="ad-pager-l">
+              <label className="ad-pager-size">Rows per page:
+                <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} aria-label="Rows per page">
+                  {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <span className="ad-pager-range">
+                {rows.length ? `Showing ${pageStart + 1}–${pageStart + visibleRows.length} of ${rows.length}` : 'Showing 0 of 0'}
+              </span>
+            </div>
+            <div className="ad-pager-r">
+              <button type="button" className="ad-btn" onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1}>Prev</button>
+              <span className="ad-pager-page">Page {currentPage} of {totalPages}</span>
+              <button type="button" className="ad-btn" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= totalPages}>Next</button>
+            </div>
+          </div>
+        )}
       </section>
+
+      {toast && <div className="ad-toast" role="status">{toast}</div>}
 
       {calc && (
         <AdminCalculator
           prefill={calc}
-          onClose={() => setCalc(null)}
-          onSaved={() => (isCalcPage ? load() : setCalcVersion(v => v + 1))}
+          editId={editId}
+          onClose={() => { setCalc(null); setEditId(undefined); }}
+          onSaved={() => { setToast(editId !== undefined ? 'Calculation updated successfully.' : 'Calculation saved successfully.'); if (isCalcPage) load(); else setCalcVersion(v => v + 1); }}
         />
       )}
     </>
@@ -335,6 +443,9 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
 
 interface RowViewProps {
   row: Row;
+  index: number;
+  selected: boolean;
+  onSelect: () => void;
   expanded: boolean;
   confirming: boolean;
   onToggle: () => void;
@@ -344,27 +455,38 @@ interface RowViewProps {
   onDelete: () => void;
   /** Opens the calculator for this enquiry's customer (enquiry lists only). */
   onCalculate?: () => void;
+  /** Opens the saved calculation for editing (calculator list only). */
+  onEdit?: () => void;
   calcVersion: number;
 }
 
-function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, onCancelDelete, onDelete, onCalculate, calcVersion }: RowViewProps) {
+function RowView({ row, index, selected, onSelect, expanded, confirming, onToggle, onStatus, onAskDelete, onCancelDelete, onDelete, onCalculate, onEdit, calcVersion }: RowViewProps) {
   const summary = isCalc(row)
-    ? [num(row.capacity_kwp, ' kWp'), row.monthly_saving !== null && `${rupees(row.monthly_saving)}/mo saving`, row.payback_years !== null && `${num(row.payback_years)} yr payback`].filter(Boolean).join(' · ')
+    ? num(row.capacity_kwp, ' kWp')
     : isQuote(row)
     ? [row.project_type && cap(row.project_type), row.capacity, row.location].filter(Boolean).join(' · ') || row.details || '—'
     : row.subject;
-  const title = rowTitle(row);
+  const title = isCalc(row) ? row.customer_name ?? 'Website visitor' : rowTitle(row);
   return (
     <>
-      <tr className={`${expanded ? 'is-open' : ''}${row.status === 'new' ? ' is-new' : ''}`}>
-        <td className="ad-date">{fmtDate(row.created_at)}</td>
+      <tr className={`${expanded ? 'is-open' : ''}${row.status === 'new' ? ' is-new' : ''}${isCalc(row) ? ' is-calc-row' : ''}${selected ? ' is-selected' : ''}`}
+        onClick={isCalc(row) ? e => { if (!(e.target as HTMLElement).closest('input, select, button, a, label')) onToggle(); } : undefined}
+        aria-expanded={isCalc(row) ? expanded : undefined}>
+        {isCalc(row) && (
+          <>
+            <td className="ad-col-sel"><input type="checkbox" className="ad-check" checked={selected} onChange={onSelect} onClick={e => e.stopPropagation()} aria-label={`Select ${title}`} /></td>
+            <td className="ad-col-sno">{index}</td>
+          </>
+        )}
+        {!isCalc(row) && <td className="ad-date">{fmtDate(row.created_at)}</td>}
         <td className="ad-name"><b>{title}</b></td>
+        {isCalc(row) && (
+          <td className="ad-loc">{row.location ? <><MapPin size={13} aria-hidden="true" />{row.location}</> : '—'}</td>
+        )}
         <td className="ad-contact">
           {isCalc(row) ? (
             <>
-              {row.customer_phone && <a href={telHref(row.customer_phone)}><Phone size={13} aria-hidden="true" />{row.customer_phone}</a>}
-              <span>{rupees(row.monthly_bill)} / month bill</span>
-              <span>{cap(row.project_type)} · {num(row.total_units, ' kWh')} / yr</span>
+              {row.customer_phone ? <a href={telHref(row.customer_phone)}><Phone size={13} aria-hidden="true" />{row.customer_phone}</a> : <span>—</span>}
             </>
           ) : (
             <>
@@ -374,7 +496,8 @@ function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, o
           )}
         </td>
         <td className="ad-summary">{summary}</td>
-        <td className="ad-st">
+        {isCalc(row) && <td className="ad-date ad-nowrap">{fmtDate(row.created_at)}</td>}
+        <td className="ad-st ad-nowrap">
           <select className={`ad-status is-${row.status}`} value={row.status} onChange={e => onStatus(e.target.value as EnquiryStatus)} aria-label={`Status for ${title}`}>
             {ENQUIRY_STATUSES.map(s => <option key={s} value={s}>{cap(s)}</option>)}
           </select>
@@ -388,20 +511,23 @@ function RowView({ row, expanded, confirming, onToggle, onStatus, onAskDelete, o
             </span>
           ) : (
             <>
+              {onEdit && (
+                <button className="ad-icon is-edit" onClick={onEdit} aria-label={`Edit calculation for ${title}`} title="Edit"><Pencil size={16} aria-hidden="true" /></button>
+              )}
               {onCalculate && (
                 <button className="ad-icon is-calc" onClick={onCalculate} aria-label={`Solar calculation for ${title}`} title="Solar calculation"><Calculator size={16} aria-hidden="true" /></button>
               )}
-              <button className="ad-icon" onClick={onToggle} aria-expanded={expanded} aria-label={expanded ? 'Hide details' : 'Show details'}>
+              {!isCalc(row) && <button className="ad-icon" onClick={onToggle} aria-expanded={expanded} aria-label={expanded ? 'Hide details' : 'Show details'}>
                 <ChevronDown size={18} className={expanded ? 'is-flip' : ''} aria-hidden="true" />
-              </button>
-              <button className="ad-icon is-danger" onClick={onAskDelete} aria-label={`Delete entry from ${title}`}><Trash2 size={16} aria-hidden="true" /></button>
+              </button>}
+              {!isCalc(row) && <button className="ad-icon is-danger" onClick={onAskDelete} aria-label={`Delete entry from ${title}`}><Trash2 size={16} aria-hidden="true" /></button>}
             </>
           )}
         </td>
       </tr>
       {expanded && (
         <tr className="ad-detail-row">
-          <td colSpan={6}>
+          <td colSpan={isCalc(row) ? 9 : 6}>
             <Details row={row} />
             {onCalculate && <LinkedCalcs col={isQuote(row) ? 'quote_request_id' : 'contact_message_id'} id={row.id} version={calcVersion} onNew={onCalculate} />}
           </td>
