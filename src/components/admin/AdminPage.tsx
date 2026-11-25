@@ -8,6 +8,8 @@ import { supabase } from '../../lib/supabase';
 import { ENQUIRY_STATUSES, deleteEnquiries, deleteEnquiry, listCalculationsFor, listEnquiries, setEnquiryStatus } from '../../lib/enquiries';
 import type { CalculatorSubmission, ContactMessage, EnquiryStatus, EnquiryTable, QuoteRequest } from '../../lib/enquiries';
 import { CONTACT_URL, buildQrPng, buildQrSvg, logoToDataUri, saveBlob } from '../../lib/contactQr';
+import { buildSolarQuotationPng, quotationFilename } from '../../lib/solarQuotation';
+import ProposalPreview from './ProposalPreview';
 import AdminCalculator, { prefillFromContact, prefillFromQuote, prefillFromSaved } from './AdminCalculator';
 import type { CalcPrefill } from './AdminCalculator';
 import './admin.css';
@@ -214,6 +216,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
   const [calcVersion, setCalcVersion] = useState(0);
   // Id of the saved calculation being edited (calculator list only).
   const [editId, setEditId] = useState<number | undefined>();
+  const [preview, setPreview] = useState<CalculatorSubmission | null>(null);
   const isCalcPage = table === 'calculator_submissions';
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
@@ -370,6 +373,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
                     <th className="ad-nowrap">Date</th>
                     <th className="ad-nowrap">Status</th>
                     <th className="ad-nowrap ad-th-action">Action</th>
+                    <th className="ad-nowrap ad-th-action">Download</th>
                   </tr>
                 ) : (
                   <tr>
@@ -397,6 +401,7 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
                     onDelete={() => remove(r.id)}
                     onEdit={isCalcPage ? () => { setEditId(r.id); setCalc(prefillFromSaved(r as CalculatorSubmission)); } : undefined}
                     onCalculate={isCalcPage ? undefined : () => setCalc(isQuote(r) ? prefillFromQuote(r) : prefillFromContact(r as ContactMessage))}
+                    onDownload={isCalcPage ? () => setPreview(r as CalculatorSubmission) : undefined}
                     calcVersion={calcVersion}
                   />
                 ))}
@@ -426,6 +431,8 @@ function ListPage({ table, label }: { table: EnquiryTable; label: string }) {
           </div>
         )}
       </section>
+
+      {preview && <ProposalPreview row={preview} onClose={() => setPreview(null)} />}
 
       {toast && <div className="ad-toast" role="status">{toast}</div>}
 
@@ -457,16 +464,31 @@ interface RowViewProps {
   onCalculate?: () => void;
   /** Opens the saved calculation for editing (calculator list only). */
   onEdit?: () => void;
+  /** Opens the print-preview dialog for this calculation (calculator list only). */
+  onDownload?: () => void;
   calcVersion: number;
 }
 
-function RowView({ row, index, selected, onSelect, expanded, confirming, onToggle, onStatus, onAskDelete, onCancelDelete, onDelete, onCalculate, onEdit, calcVersion }: RowViewProps) {
+function RowView({ row, index, selected, onSelect, expanded, confirming, onToggle, onStatus, onAskDelete, onCancelDelete, onDelete, onCalculate, onEdit, onDownload, calcVersion }: RowViewProps) {
   const summary = isCalc(row)
     ? num(row.capacity_kwp, ' kWp')
     : isQuote(row)
     ? [row.project_type && cap(row.project_type), row.capacity, row.location].filter(Boolean).join(' · ') || row.details || '—'
     : row.subject;
   const title = isCalc(row) ? row.customer_name ?? 'Website visitor' : rowTitle(row);
+  const [downloading, setDownloading] = useState(false);
+  const downloadQuotation = async () => {
+    if (!isCalc(row)) return;
+    setDownloading(true);
+    try {
+      saveBlob(await buildSolarQuotationPng(row), quotationFilename(row));
+    } catch (err) {
+      console.error('Quotation download failed', err);
+      window.alert('Could not create the quotation. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
   return (
     <>
       <tr className={`${expanded ? 'is-open' : ''}${row.status === 'new' ? ' is-new' : ''}${isCalc(row) ? ' is-calc-row' : ''}${selected ? ' is-selected' : ''}`}
@@ -524,10 +546,15 @@ function RowView({ row, index, selected, onSelect, expanded, confirming, onToggl
             </>
           )}
         </td>
+        {isCalc(row) && (
+          <td className="ad-actions ad-col-dl">
+            <button className="ad-icon is-edit" onClick={onDownload} aria-label={`Preview proposal for ${title}`} title="Download"><Download size={16} aria-hidden="true" /></button>
+          </td>
+        )}
       </tr>
       {expanded && (
         <tr className="ad-detail-row">
-          <td colSpan={isCalc(row) ? 9 : 6}>
+          <td colSpan={isCalc(row) ? 10 : 6}>
             <Details row={row} />
             {onCalculate && <LinkedCalcs col={isQuote(row) ? 'quote_request_id' : 'contact_message_id'} id={row.id} version={calcVersion} onNew={onCalculate} />}
           </td>

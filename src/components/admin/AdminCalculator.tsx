@@ -5,6 +5,7 @@ import { EMPTY_INPUTS, READING_LABELS, calculate, parseNum, recommendedCapacityK
 import type { CalcInputs, ProjectType } from '../calculator/calculatorLogic';
 import { listEnquiries, saveAdminCalculation, updateAdminCalculation } from '../../lib/enquiries';
 import { BILL_COUNT, EMPTY_BILLS, initialFixedCharges, calculateFinancials, formatPayback, formatRupees, moneyValue, sanitizeMoney } from './solarFinancials';
+import SolarFinancialCharts from './SolarFinancialCharts';
 import type { CalcCustomer, CalculatorSubmission, ContactMessage, QuoteRequest } from '../../lib/enquiries';
 
 /** What the calculator opens with: the customer (and their enquiry) plus any requirement already known. */
@@ -350,6 +351,11 @@ export default function AdminCalculator({ prefill, editId, onClose, onSaved }: P
                 </Field>
               </div>
             </section>
+
+            {/* Analytics appear only once the calculation has been generated and the bills are valid */}
+            {calcResult && fin.annualBill > 0 && (
+              <SolarFinancialCharts bills={bills} fixedCharges={fixedCharges} installationCost={installationCost} fin={fin} />
+            )}
           </div>
 
           {/* ── RIGHT: Calculate Button + Results ── */}
@@ -369,15 +375,6 @@ export default function AdminCalculator({ prefill, editId, onClose, onSaved }: P
                 {isStale && (
                   <p className="ad-solar-stale-msg">⚠ Readings changed — click Calculate to update.</p>
                 )}
-
-                {/* Hero: Recommended Capacity */}
-                <div className="ad-solar-hero">
-                  <span className="ad-solar-hero-label">Recommended Solar Capacity</span>
-                  <div className="ad-solar-hero-value">
-                    {fmt1(calcResult.recommendedKw)}
-                    <span className="ad-solar-hero-unit">kW</span>
-                  </div>
-                </div>
 
                 {/* Breakdown */}
                 <div className="ad-solar-breakdown">
@@ -421,7 +418,9 @@ export default function AdminCalculator({ prefill, editId, onClose, onSaved }: P
                 </div>
               </dl>
             </div>
+
           </aside>
+
         </div>
 
         <footer className="ad-modal-ft">

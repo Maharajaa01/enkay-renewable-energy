@@ -138,7 +138,7 @@ const crc32 = (b: Uint8Array) => {
 };
 
 /** Insert a pHYs chunk so print software opens the PNG at 300 DPI. */
-function setPngDpi(png: Uint8Array, dpi = 300): Uint8Array {
+export function setPngDpi(png: Uint8Array, dpi = 300): Uint8Array {
   const ppm = Math.round(dpi / 0.0254);
   const chunk = new Uint8Array(21);
   const dv = new DataView(chunk.buffer);
