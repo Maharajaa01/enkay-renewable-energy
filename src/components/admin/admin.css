@@ -600,7 +600,7 @@
 .pp-scroll { overflow: auto; background: #e9eeea; padding: 10px; flex: 1; }
 .pp-stage { width: max-content; margin: 0 auto; }
 
-.pp-sheet { box-sizing: border-box; background: #fff; color: #1b2a22; padding: 22px 24px 28px; font: 400 13px/1.5 'Inter', 'Manrope', Arial, sans-serif; box-shadow: 0 2px 12px rgba(0,0,0,.18); }
+.pp-sheet { box-sizing: border-box; background: #fff; color: #1b2a22; padding: 22px 24px 14px; font: 400 12.5px/1.5 'Inter', 'Manrope', Arial, sans-serif; box-shadow: 0 2px 12px rgba(0,0,0,.18); }
 .pp-sheet table { width: 100%; border-collapse: collapse; }
 .pp-head { display: grid; grid-template-columns: 1fr 1.05fr; gap: 18px; align-items: stretch; padding-bottom: 18px; margin-bottom: 20px; border-bottom: 4px solid #166534; position: relative; }
 .pp-head::after { content: ''; position: absolute; left: 0; bottom: -4px; width: 30%; height: 4px; background: #facc15; }
@@ -610,23 +610,23 @@
 .pp-doc { text-align: right; }
 .pp-doc h1 { margin: 0 0 4px; font-size: 24px; color: #0B3D2E; }
 .pp-doc p { margin: 0; font-size: 12px; color: #4b5a51; }
-.pp-sec { margin-bottom: 20px; }
-.pp-sec h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #166534; border-bottom: 1px solid #BBF7D0; padding-bottom: 4px; }
-.pp-kv th, .pp-kv td, .pp-list th, .pp-list td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #e6efe9; }
+.pp-sec { margin-bottom: 12px; }
+.pp-sec h2 { margin: 0 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #166534; border-bottom: 1px solid #BBF7D0; padding-bottom: 4px; }
+.pp-kv th, .pp-kv td, .pp-list th, .pp-list td { padding: 4px 8px; text-align: left; border-bottom: 1px solid #e6efe9; }
 .pp-kv th { width: 15%; color: #4b5a51; font-weight: 600; }
 .pp-kv td { width: 35%; font-weight: 600; }
 .pp-list th { font-weight: 500; color: #4b5a51; }
 .pp-list td { text-align: right; font-weight: 700; color: #0B3D2E; }
-.pp-hero { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 8px; padding: 12px 16px; border-radius: 10px; background: #0B3D2E; color: #fff; }
+.pp-hero { display: flex; justify-content: space-between; align-items: center; margin: 2px 0 6px; padding: 8px 16px; border-radius: 10px; background: #0B3D2E; color: #fff; }
 .pp-hero span { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
-.pp-hero b { font-size: 22px; color: #facc15; }
-.pp-hero.is-light { background: #ECFDF5; border: 1px solid #BBF7D0; color: #166534; margin-top: 10px; }
+.pp-hero b { font-size: 20px; color: #facc15; }
+.pp-hero.is-light { background: #ECFDF5; border: 1px solid #BBF7D0; color: #166534; margin-top: 6px; }
 .pp-hero.is-light b { color: #0B3D2E; }
-.pp-grid th, .pp-grid td { border: 1px solid #BBF7D0; padding: 6px 4px; text-align: center; font-size: 12px; }
+.pp-grid th, .pp-grid td { border: 1px solid #BBF7D0; padding: 4px; text-align: center; font-size: 12px; }
 .pp-grid thead th { background: #ECFDF5; color: #166534; }
 .pp-grid tbody th { background: #f6fbf8; text-align: left; padding-left: 8px; width: 16%; }
 .pp-nobreak { break-inside: avoid; page-break-inside: avoid; }
-.pp-foot { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d6e4db; font-size: 10.5px; color: #6b776f; }
+.pp-foot { margin-top: 12px; padding-top: 8px; border-top: 1px solid #d6e4db; font-size: 10.5px; color: #6b776f; }
 
 @media (max-width: 700px) {
   .pp-scroll { padding: 8px; }
@@ -634,7 +634,7 @@
 }
 
 @media print {
-  @page { size: A4; margin: 0; }
+  @page { size: A4 portrait; margin: 8mm; }
   body > *:not(.pp-portal) { display: none !important; }
   html, body { background: #fff !important; }
   .pp-bg { position: static; background: none; padding: 0; display: block; }
@@ -642,7 +642,7 @@
   .pp-bar, .pp-err { display: none !important; }
   .pp-scroll { overflow: visible; padding: 0; background: none; }
   .pp-stage { width: auto; zoom: 1; }
-  .pp-sheet { box-shadow: none; width: 210mm !important; min-height: 297mm !important; padding: 10mm 9mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pp-sheet { box-shadow: none; width: 194mm !important; min-height: 0 !important; height: 280mm !important; max-height: 280mm; overflow: hidden; padding: 3mm 4mm 2mm !important; break-after: avoid; page-break-after: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
 .pp-logo { height: 62px; width: auto; max-width: 260px; object-fit: contain; display: block; }

@@ -133,15 +133,12 @@ export default function ProposalPreview({ row, onClose }: { row: CalculatorSubmi
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
-      const slicePx = Math.floor(canvas.width * (pageH / pageW)); // canvas px that fit one A4 page
-      for (let y = 0, page = 0; y < canvas.height; y += slicePx, page++) {
-        const h = Math.min(slicePx, canvas.height - y);
-        const part = document.createElement('canvas');
-        part.width = canvas.width; part.height = h;
-        part.getContext('2d')!.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
-        if (page > 0) pdf.addPage();
-        pdf.addImage(part.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pageW, (h * pageW) / canvas.width);
-      }
+      // Fit the whole capture onto ONE A4 page: scale to the tighter of width/height, then centre.
+      const margin = 0;
+      const availW = pageW - margin * 2, availH = pageH - margin * 2;
+      const ratio = Math.min(availW / canvas.width, availH / canvas.height);
+      const w = canvas.width * ratio, h = canvas.height * ratio;
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (pageW - w) / 2, margin, w, h);
       pdf.save(`${safeName(name)}-Solar-Proposal.pdf`);
     } catch (e) {
       console.error('PDF export failed', e);
